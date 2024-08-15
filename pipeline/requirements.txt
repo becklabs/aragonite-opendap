@@ -1,0 +1,9 @@
+PyCO2SYS
+GPy
+ipykernel
+joblib
+matplotlib
+numpy
+pandas
+scikit-learn
+scipy
