@@ -33,8 +33,8 @@ class AQUAMODISCHLORL3:
         end: pd.Timestamp,
     ):
 
-        lat_low = argclosest(self.lats, lat_min)
-        lat_high = argclosest(self.lats, lat_max)
+        lat_low = argclosest(self.lats, lat_max)
+        lat_high = argclosest(self.lats, lat_min)
 
         lon_low = argclosest(self.lons, lon_min)
         lon_high = argclosest(self.lons, lon_max)
@@ -53,11 +53,11 @@ class AQUAMODISCHLORL3:
             chlor_a_data = chlor_a.data.squeeze()
 
             # Check if close to fill value instead
-            nans = np.isclose(chlor_a_data, chlor_a["_FillValue"])
+            nans = np.isclose(chlor_a_data, chlor_a.attributes["_FillValue"])
 
             chlor_a_data[nans] = np.nan
 
-            output[i] = chlor_a
+            output[i] = chlor_a_data
 
         output = output.reshape((n_days, n_lats * n_lons))
 
