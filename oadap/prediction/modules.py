@@ -3,7 +3,13 @@ import joblib
 import PyCO2SYS
 
 
-class TCNModule: ...
+class TCNModule: 
+    def __init__(self):
+        # Climatology
+        # Phi-FVCOM
+        # XY-FVCOM
+        # Optional neighbors
+        pass
 
 
 class TAlkRegressionModule:
@@ -39,7 +45,6 @@ class DICRegressionModule:
             mask = self.SEASONS[season](data[time_col])
             X = data[mask][[temperature_col, salinity_col, chlorophyll_col]].values
             X = self._transform(X, season=season)
-            print(X)
             y_pred, _ = self.checkpoint[season]["model"].predict(X)
             y_pred = self._inverse_transform(y_pred, season=season).reshape(-1)
             result.loc[mask] = y_pred
