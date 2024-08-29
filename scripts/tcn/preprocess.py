@@ -4,11 +4,15 @@ import os
 import numpy as np
 import pandas as pd
 
-from oadap.prediction.tcn.preprocessing.climatology import calculate_climatology, calculate_climatology_days
-from oadap.prediction.tcn.preprocessing.neighbors import group
-from oadap.prediction.tcn.preprocessing.pca import svd_decompose, reconstruct_T
-from oadap.prediction.tcn.preprocessing.sampling import uniform_sampling
-from oadap.prediction.tcn.preprocessing.windows import create_windows
+from oadap.prediction.tcn.preprocessing import (
+    calculate_climatology,
+    calculate_climatology_days,
+    group,
+    svd_decompose,
+    reconstruct_T,
+    uniform_sampling,
+    create_windows,
+)
 
 from oadap.utils import load_mat
 
@@ -19,13 +23,14 @@ logger = logging.getLogger(__name__)
 
 # VARIABLES
 data_dir = "data/FVCOM/"
-array_path = data_dir + "temperature/temp.mat"
-# array_path = data_dir + "salinity/salinity.mat"
+# array_path = data_dir + "temperature/temp.mat"
+array_path = data_dir + "salinity/salinity.mat"
 
 
-output_dir = data_dir + "preprocessed/temperature/sample/"
-# output_dir = data_dir + "preprocessed/salinity/sample/"
+# output_dir = data_dir + "preprocessed/temperature/sample/"
+output_dir = data_dir + "preprocessed/salinity/sample/"
 
+artifacts_only = True
 rewrite = True
 window_size = 20
 stride = 1
@@ -170,7 +175,14 @@ np.save(artifacts_output_dir + "climatology_days.npy", climatology_days_3d)
 total_size = sum(
     [
         arr.nbytes
-        for arr in [X_windowed_sample, y_sample, T_sample, phi_sample, xy_sample, climatology_grouped]
+        for arr in [
+            X_windowed_sample,
+            y_sample,
+            T_sample,
+            phi_sample,
+            xy_sample,
+            climatology_grouped,
+        ]
     ]
 )
 total_size_gb = total_size / 1e9

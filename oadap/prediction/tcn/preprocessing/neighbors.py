@@ -103,14 +103,17 @@ def find_neighbors(xy, coastline, min_distance=0.01, max_distance=0.04):
 
 def group(data: np.ndarray, neighbor_inds: np.ndarray) -> np.ndarray:
     """
-    Group data points with their neighbors specified in a neighbor_inds array
+    Group data points with their neighbors specified in a neighbor_inds array.
+    Missing neighbors (represented by -1) are replaced with np.nan.
     """
     nx = data.shape[0]
     nt = data.shape[1]
     n_neighbors = neighbor_inds.shape[-1]
-
-    grouped = np.zeros((nx, nt, n_neighbors + 1))
+    grouped = np.full((nx, nt, n_neighbors + 1), np.nan)
+    
     for i, loc in enumerate(data):
-        neighbor_data = data[neighbor_inds[i] - 1]
-        grouped[i] = np.vstack((loc.reshape(1, -1), neighbor_data)).T
+        grouped[i, :, 0] = loc
+        valid_neighbors = neighbor_inds[i] != -1
+        grouped[i, :, 1:][..., valid_neighbors] = data[neighbor_inds[i][valid_neighbors]].T
+    
     return grouped
