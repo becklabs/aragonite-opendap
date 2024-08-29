@@ -2,14 +2,159 @@ import pandas as pd
 import joblib
 import PyCO2SYS
 
+import numpy as np
+from typing import Tuple, List
 
-class TCNModule: 
-    def __init__(self):
-        # Climatology
-        # Phi-FVCOM
-        # XY-FVCOM
-        # Optional neighbors
-        pass
+import torch
+from torch.utils.data import DataLoader, TensorDataset
+from scipy.spatial import KDTree
+
+from .tcn.preprocessing import group, create_windows, reconstruct_T, reconstruct_data
+from .tcn.utils import load_config, set_device, load_model
+
+
+class TCNModule:
+
+    def __init__(
+        self,
+        grid_xy: np.ndarray,
+        grid_neighbor_inds: np.ndarray,
+        fvcom_xy: np.ndarray,
+        fvcom_h: np.ndarray,
+        fvcom_phi: np.ndarray,
+        fvcom_climatologies: np.ndarray,
+        config_path: str,
+        checkpoint_path: str,
+    ):
+
+        self.config = load_config(config_path)
+        self.device = set_device(self.config["inference"]["device"])
+        self.model, self.X_scaler, self.y_scaler = load_model(
+            config=self.config, checkpoint_path=checkpoint_path, device=self.device
+        )
+
+        self.grid_xy = grid_xy.reshape(-1, 2)  # (gp, 2)
+        self.grid_neighbor_inds = grid_neighbor_inds.reshape(
+            -1, self.config["features"]["n_neighbors"]
+        )  # (gp, n_neighbors)
+        self.grid_neighbors_mask = np.all(
+            self.grid_neighbor_inds != -1, axis=1
+        )  # (gp,)
+
+        assert self.grid_xy.shape[0] == self.grid_neighbor_inds.shape[0]
+
+        self.fvcom_xy = fvcom_xy  # (np, 2)
+        self.fvcom_h = fvcom_h  # (np, 1)
+        self.fvcom_phi = fvcom_phi  # (np, nz, 2)
+        self.fvcom_day_climatologies = fvcom_climatologies  # (np, n_days, nz)
+
+        tree = KDTree(self.fvcom_xy)
+        dist, self.grid_idx_map = tree.query(self.grid_xy)
+
+    def predict(
+        self, surface: np.ndarray, time: pd.DatetimeIndex
+    ) -> Tuple[np.ndarray, np.ndarray]:
+
+        nx, nt = surface.shape
+        assert nx == self.grid_xy.shape[0]
+        assert nt == len(time)
+
+        climatologies = self.fvcom_day_climatologies[:, time.day_of_year - 1, :]
+        climatologies_surface = climatologies[:, :, 0]
+        anomalies_surface = surface - climatologies_surface[self.grid_idx_map]
+
+        anomalies_grouped = group(
+            data=anomalies_surface, neighbor_inds=self.grid_neighbor_inds
+        )
+
+        X = np.stack(
+            (
+                anomalies_grouped[self.grid_neighbors_mask][..., 0],
+                anomalies_grouped[self.grid_neighbors_mask][..., 1],
+                anomalies_grouped[self.grid_neighbors_mask][..., 2],
+                anomalies_grouped[self.grid_neighbors_mask][..., 3],
+                anomalies_grouped[self.grid_neighbors_mask][..., 4],
+                climatologies_surface[self.grid_idx_map][self.grid_neighbors_mask],
+                np.repeat(
+                    self.fvcom_xy[self.grid_idx_map][self.grid_neighbors_mask][:, 0][
+                        ..., np.newaxis
+                    ],
+                    nt,
+                    axis=1,
+                ),
+                np.repeat(
+                    self.fvcom_xy[self.grid_idx_map][self.grid_neighbors_mask][:, 1][
+                        ..., np.newaxis
+                    ],
+                    nt,
+                    axis=1,
+                ),
+                np.repeat(
+                    self.fvcom_h[self.grid_idx_map][self.grid_neighbors_mask],
+                    nt,
+                    axis=1,
+                ),
+            ),
+            axis=2,
+        )
+
+        X_windowed = create_windows(
+            X,
+            window_size=self.config["features"]["window_size"],
+            sampling_rate=self.config["features"]["sampling_rate"],
+            stride=self.config["features"]["stride"],
+        )
+        nx, nw, nt, nf = X_windowed.shape
+
+        time_windowed = pd.to_datetime(
+            create_windows(
+                np.array(time)[..., np.newaxis],
+                window_size=self.config["features"]["window_size"],
+                sampling_rate=self.config["features"]["sampling_rate"],
+                stride=self.config["features"]["stride"],
+                last_only=True,
+            ).flatten()
+        )
+
+        X_windowed = X_windowed.reshape(nx * nw * nt, nf)
+        X_windowed_scaled = self.X_scaler.transform(X_windowed)
+        X_windowed_scaled = X_windowed_scaled.reshape(nx * nw, nt, nf)
+
+        dataset = TensorDataset(torch.FloatTensor(X_windowed_scaled))
+        dataloader = DataLoader(
+            dataset, batch_size=self.config["inference"]["batch_size"]
+        )
+
+        preds: List[np.ndarray] = []
+
+        with torch.no_grad():
+            for batch in dataloader:
+                X_batch = batch[0].to(self.device)
+                y_pred = self.model(X_batch)
+                preds.append(y_pred.cpu().numpy())
+
+        preds_arr = np.vstack(preds)
+        preds_arr = self.y_scaler.inverse_transform(preds_arr)
+
+        preds_arr = preds_arr.reshape(nx, nw, -1)
+
+        T_bar = preds_arr[..., 0]
+        q = preds_arr[..., 1:]
+
+        pred_anomalies = reconstruct_T(
+            phi=self.fvcom_phi[self.grid_idx_map][self.grid_neighbors_mask],
+            T_bar=T_bar,
+            q=q,
+        )
+        pred_data = reconstruct_data(
+            anomalies=pred_anomalies,
+            time=time_windowed,
+            climatology_days=self.fvcom_day_climatologies[self.grid_idx_map][
+                self.grid_neighbors_mask
+            ],
+        )
+
+        return pred_data, time_windowed
 
 
 class TAlkRegressionModule:

@@ -53,7 +53,7 @@ def create_windows(
         output_shape = input_shape[:-2] + (n_windows, window_size) + (input_shape[-1],)
     
     # Create an empty array to store the sequences
-    sequences = np.empty(output_shape)
+    sequences = np.empty(output_shape, dtype=arr.dtype)
     
     # Create windows
     for i in range(n_windows):
