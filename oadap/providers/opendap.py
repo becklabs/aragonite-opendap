@@ -5,7 +5,7 @@ import numpy as np
 from pydap.client import open_url
 from typing import Optional, List, Union
 from pydap.cas.urs import setup_session
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def argclosest(arr, val):
     return np.argmin(np.abs(arr - val))
@@ -63,6 +63,30 @@ class NASA_OPeNDAP(ABC):
     @abstractmethod
     def get_granule_url(self, date: pd.Timestamp): ...
 
+    def _process_day(self, day, lat_low, lat_high, lon_low, lon_high):
+        url = self.get_granule_url(day)
+        dataset = open_url(url, session=self.session)
+
+        if self.time_variable is not None:
+            variable = dataset[self.variable][0, lat_low:lat_high, lon_low:lon_high]
+        else:
+            variable = dataset[self.variable][lat_low:lat_high, lon_low:lon_high]
+
+        variable_data = variable.data.squeeze()
+
+        # Replace fill values with NaN
+        nans = np.isclose(variable_data, variable.attributes[self.fill_value_attr])
+        variable_data = variable_data.astype(np.float32)
+        variable_data[nans] = np.nan
+
+        # Apply scale factor and add offset
+        if self.scale_factor_attr is not None:
+            variable_data *= variable.attributes[self.scale_factor_attr]
+            if self.add_offset_attr is not None:
+                variable_data += variable.attributes[self.add_offset_attr]
+
+        return variable_data
+
     def subset(
         self,
         lat_min: float,
@@ -71,9 +95,18 @@ class NASA_OPeNDAP(ABC):
         lon_max: float,
         start: pd.Timestamp,
         end: pd.Timestamp,
+        workers: int = 1,
     ):
         """
         Subset the dataset to a bounding box and time range
+
+        Parameters:
+        - lat_min, lat_max, lon_min, lon_max: float
+            Bounding box coordinates
+        - start, end: pd.Timestamp
+            Start and end dates for the time range
+        - workers: int
+            Number of worker threads to use for parallel processing
 
         Returns:
         - data (n_days, n_lats * n_lons)
@@ -101,29 +134,18 @@ class NASA_OPeNDAP(ABC):
 
         output = np.empty((n_days, n_lats, n_lons))
 
-        for i, day in enumerate(pd.date_range(start, end)):
-            url = self.get_granule_url(day)
-            dataset = open_url(url, session=self.session)
+        date_range = pd.date_range(start, end)
 
-            if self.time_variable is not None:
-                variable = dataset[self.variable][0, lat_low:lat_high, lon_low:lon_high]
-            else:
-                variable = dataset[self.variable][lat_low:lat_high, lon_low:lon_high]
-
-            variable_data = variable.data.squeeze()
-
-            # Replace fill values with NaN
-            nans = np.isclose(variable_data, variable.attributes[self.fill_value_attr])
-            variable_data = variable_data.astype(np.float32)
-            variable_data[nans] = np.nan
-
-            # Apply scale factor and add offset
-            if self.scale_factor_attr is not None:
-                variable_data *= variable.attributes[self.scale_factor_attr]
-                if self.add_offset_attr is not None:
-                    variable_data += variable.attributes[self.add_offset_attr]
-
-            output[i] = variable_data
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            future_to_day = {executor.submit(self._process_day, day, lat_low, lat_high, lon_low, lon_high): i 
+                             for i, day in enumerate(date_range)}
+            
+            for future in as_completed(future_to_day):
+                day_index = future_to_day[future]
+                try:
+                    output[day_index] = future.result()
+                except Exception as exc:
+                    print(f'Day {date_range[day_index]} generated an exception: {exc}')
 
         output = output.transpose((0, 2, 1))
 
