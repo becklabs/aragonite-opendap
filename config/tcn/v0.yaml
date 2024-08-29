@@ -5,8 +5,14 @@ data:
   val_points: 10
   train_split: 0.8
 
+features:
+  window_size: 20
+  sampling_rate: 1
+  stride: 1
+  n_neighbors: 4
+
 model:
-  type: "RegressionTCN"  # or "SpatialRegressionTCNv1"
+  type: "RegressionTCNv0"  # or "SpatialRegressionTCNv1"
   feature_dim: 9
   output_dim: 3
   hidden_channels: [64, 64, 64, 64, 64, 64]
@@ -27,6 +33,10 @@ training:
   resume_from_checkpoint: false
   resume_checkpoint: "model_epoch_100.pth"  # Specify the checkpoint file to resume from
   checkpoint_dir: "training_checkpoints/tcn_lite/"
+
+inference:
+  batch_size: 128
+  device: "auto"
 
 wandb:
   project: "tcn_lite"

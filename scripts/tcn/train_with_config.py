@@ -50,8 +50,8 @@ def prepare_datasets(X, y, config, device):
     y_val = y_val.reshape(-1, nl)
 
     # Use the first year for training and the second for testing
-    train_inds = np.arange(X.shape[0])[:(nx - n_val_points) * 365]
-    # train_inds = np.random.choice(X.shape[0], int(X.shape[0] * config['data']['train_split']), replace=False)
+    # train_inds = np.arange(X.shape[0])[:(nx - n_val_points) * 365]
+    train_inds = np.random.choice(X.shape[0], int(X.shape[0] * config['data']['train_split']), replace=False)
     test_inds = np.setdiff1d(np.arange(X.shape[0]), train_inds)
 
     train_dataset = TempDataset(X[train_inds], y[train_inds], device=device)
