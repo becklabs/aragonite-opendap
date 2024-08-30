@@ -70,7 +70,7 @@ logger.info("Calculating SVD decomposition")
 climatology_days_3d = calculate_climatology_days(time=time, data=T)
 climatology_3d, anomalies_3d = calculate_climatology(time=time, data=T)
 q_anomaly, phi_anomaly, T_bar_anomaly, _ = svd_decompose(
-    anomalies_3d, n_modes=2, check=False
+    anomalies_3d, n_modes=2, check=False, align=True
 )
 
 # Calculate climatology and anomalies of the surface
@@ -169,7 +169,7 @@ np.save(train_output_dir + "y.npy", y_sample)
 np.save(artifacts_output_dir + "T.npy", T_sample)
 np.save(artifacts_output_dir + "phi.npy", phi_sample)
 np.save(artifacts_output_dir + "xy.npy", xy_sample)
-np.save(artifacts_output_dir + "climatology_days.npy", climatology_days_3d)
+np.save(artifacts_output_dir + "climatology_days.npy", climatology_days_3d[sample_mask])
 
 # Log the total size of the arrays in GB
 total_size = sum(
@@ -181,7 +181,7 @@ total_size = sum(
             T_sample,
             phi_sample,
             xy_sample,
-            climatology_grouped,
+            climatology_days_3d,
         ]
     ]
 )

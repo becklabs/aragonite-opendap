@@ -22,7 +22,7 @@ def reconstruct_T(phi: np.ndarray, q: np.ndarray, T_bar: np.ndarray) -> np.ndarr
 
 
 def svd_decompose(
-    data: np.ndarray, n_modes: int, check: bool = False
+    data: np.ndarray, n_modes: int, check: bool = False, align: bool = False
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Optional[np.ndarray]]:
     """
     Decompose data (nx, nt, nz) into:
@@ -44,6 +44,12 @@ def svd_decompose(
     q = np.einsum("ijk,ikl->ijl", phi.transpose(0, 2, 1), Z)  # (nx, n_modes, nt)
 
     q = q.transpose((0, 2, 1))  # (nx, nt, n_modes)
+
+    if align:
+        flip_mask = phi[:, 0, 1] > 0
+        phi[flip_mask, :, 1] *= -1
+        q[flip_mask, :, 1] *= -1
+    
 
     if check:
         proj = reconstruct_T(phi, q, mu)
