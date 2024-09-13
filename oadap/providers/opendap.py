@@ -1,5 +1,6 @@
 import os
 from abc import ABC, abstractmethod
+import logging
 import pandas as pd  # type: ignore
 import numpy as np
 from pydap.client import open_url
@@ -7,12 +8,9 @@ from typing import Optional, List, Union
 from pydap.cas.urs import setup_session
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
+
 def argclosest(arr, val):
     return np.argmin(np.abs(arr - val))
-
-
-def K_to_C(K):
-    return K - 273.15
 
 
 class NASA_OPeNDAP(ABC):
@@ -61,31 +59,38 @@ class NASA_OPeNDAP(ABC):
         self.grid_lons = grid_lons
 
     @abstractmethod
-    def get_granule_url(self, date: pd.Timestamp): ...
+    def get_granule_url(self, date: pd.Timestamp) -> str: ...
 
-    def _process_day(self, day, lat_low, lat_high, lon_low, lon_high):
-        url = self.get_granule_url(day)
-        dataset = open_url(url, session=self.session)
+    def _process_day(self, day, lat_low, lat_high, lon_low, lon_high, retries=3):
+        for attempt in range(retries):
+            try:
+                url = self.get_granule_url(day)
+                dataset = open_url(url, session=self.session)
+                if self.time_variable is not None:
+                    variable = dataset[self.variable][0, lat_low:lat_high, lon_low:lon_high]
+                else:
+                    variable = dataset[self.variable][lat_low:lat_high, lon_low:lon_high]
+                variable_data = variable.data.squeeze()
 
-        if self.time_variable is not None:
-            variable = dataset[self.variable][0, lat_low:lat_high, lon_low:lon_high]
-        else:
-            variable = dataset[self.variable][lat_low:lat_high, lon_low:lon_high]
+                # Replace fill values with NaN
+                nans = np.isclose(variable_data, variable.attributes[self.fill_value_attr])
+                variable_data = variable_data.astype(np.float32)
+                variable_data[nans] = np.nan
 
-        variable_data = variable.data.squeeze()
+                # Apply scale factor and add offset
+                if self.scale_factor_attr is not None:
+                    variable_data *= variable.attributes[self.scale_factor_attr]
+                    if self.add_offset_attr is not None:
+                        variable_data += variable.attributes[self.add_offset_attr]
 
-        # Replace fill values with NaN
-        nans = np.isclose(variable_data, variable.attributes[self.fill_value_attr])
-        variable_data = variable_data.astype(np.float32)
-        variable_data[nans] = np.nan
+                return variable_data
 
-        # Apply scale factor and add offset
-        if self.scale_factor_attr is not None:
-            variable_data *= variable.attributes[self.scale_factor_attr]
-            if self.add_offset_attr is not None:
-                variable_data += variable.attributes[self.add_offset_attr]
-
-        return variable_data
+            except Exception as e:
+                if attempt < retries - 1:  # if it's not the last attempt
+                    logging.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying...")
+                else:
+                    logging.error(f"All {retries} attempts failed. Last error: {str(e)}")
+                    raise  # re-raise the last exception
 
     def subset(
         self,
@@ -96,6 +101,7 @@ class NASA_OPeNDAP(ABC):
         start: pd.Timestamp,
         end: pd.Timestamp,
         workers: int = 1,
+        retries: int = 3,
     ):
         """
         Subset the dataset to a bounding box and time range
@@ -109,8 +115,8 @@ class NASA_OPeNDAP(ABC):
             Number of worker threads to use for parallel processing
 
         Returns:
-        - data (n_days, n_lats * n_lons)
-        - xy coordinates (n_lats * n_lons, 2)
+        - data (n_lons, n_lats, n_days)
+        - xy coordinates (n_lons, n_lats, 2)
         - time range (n_days)
         """
 
@@ -137,22 +143,28 @@ class NASA_OPeNDAP(ABC):
         date_range = pd.date_range(start, end)
 
         with ThreadPoolExecutor(max_workers=workers) as executor:
-            future_to_day = {executor.submit(self._process_day, day, lat_low, lat_high, lon_low, lon_high): i 
-                             for i, day in enumerate(date_range)}
-            
+            future_to_day = {
+                executor.submit(
+                    self._process_day, day, lat_low, lat_high, lon_low, lon_high, retries
+                ): i
+                for i, day in enumerate(date_range)
+            }
+
             for future in as_completed(future_to_day):
                 day_index = future_to_day[future]
                 try:
                     output[day_index] = future.result()
                 except Exception as exc:
-                    print(f'Day {date_range[day_index]} generated an exception: {exc}')
+                    print(f"Day {date_range[day_index]} generated an exception: {exc}")
 
-        output = output.transpose((0, 2, 1))
+        output = output.transpose((2, 1, 0)) # (n_lons, n_lats, n_days)
 
         assert self.grid_lats is not None
         assert self.grid_lons is not None
 
-        xy = np.meshgrid(self.grid_lons[lon_low:lon_high], self.grid_lats[lat_low:lat_high])
+        xy = np.meshgrid(
+            self.grid_lons[lon_low:lon_high], self.grid_lats[lat_low:lat_high]
+        )
         xy = np.stack(xy, axis=-1).transpose(1, 0, 2)
 
         time = pd.date_range(start, end)
@@ -165,6 +177,7 @@ class AQUAMODISCHLORL3(NASA_OPeNDAP):
     Level 3 Chlorophyll
     https://oceandata.sci.gsfc.nasa.gov/opendap/MODISA/L3SMI/contents.html
     """
+
     def __init__(self):
         super().__init__(variable="chlor_a")
 
@@ -172,7 +185,8 @@ class AQUAMODISCHLORL3(NASA_OPeNDAP):
         day = date.strftime("%d")
         month = date.strftime("%m")
         year = date.strftime("%Y")
-        return f"dap4://oceandata.sci.gsfc.nasa.gov/opendap/MODISA/L3SMI/{year}/{month + day}/AQUA_MODIS.{year + month + day}.L3m.DAY.CHL.chlor_a.4km.NRT.nc"
+        flag = ".NRT" if date > pd.Timestamp("02-28-2022") else ""
+        return f"dap4://oceandata.sci.gsfc.nasa.gov/opendap/MODISA/L3SMI/{year}/{month + day}/AQUA_MODIS.{year + month + day}.L3m.DAY.CHL.chlor_a.4km{flag}.nc"
 
 
 class GHRSSTL4(NASA_OPeNDAP):
@@ -181,7 +195,11 @@ class GHRSSTL4(NASA_OPeNDAP):
     https://cmr.earthdata.nasa.gov/virtual-directory/collections/C1996881146-POCLOUD/temporal
     """
 
-    def __init__(self, earthdata_username: Optional[str] = None, earthdata_password: Optional[str] = None):
+    def __init__(
+        self,
+        earthdata_username: Optional[str] = None,
+        earthdata_password: Optional[str] = None,
+    ):
         super().__init__(
             variable="analysed_sst",
             time_variable="time",
