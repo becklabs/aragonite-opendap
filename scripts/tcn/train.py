@@ -8,7 +8,7 @@ import torch.nn as nn
 import argparse
 from torch.utils.data import DataLoader
 
-from oadap.prediction.tcn.dataset import TempDataset
+from oadap.prediction.tcn.dataset import WindowedDataset
 from oadap.prediction.tcn.model import (
     RegressionTCN,
     RegressionTCNv0,
@@ -78,15 +78,15 @@ def prepare_datasets(X, y, config, device):
     )
     test_inds = np.setdiff1d(np.arange(X.shape[0]), train_inds)
 
-    train_dataset = TempDataset(X[train_inds], y[train_inds], device=device)
-    test_dataset = TempDataset(
+    train_dataset = WindowedDataset(X[train_inds], y[train_inds], device=device)
+    test_dataset = WindowedDataset(
         X[test_inds],
         y[test_inds],
         X_scaler=train_dataset.X_scaler,
         y_scaler=train_dataset.y_scaler,
         device=device,
     )
-    val_dataset = TempDataset(
+    val_dataset = WindowedDataset(
         X_val,
         y_val,
         X_scaler=train_dataset.X_scaler,

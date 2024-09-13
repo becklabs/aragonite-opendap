@@ -43,7 +43,7 @@ def parse_arguments():
     )
     parser.add_argument(
         "--output_file",
-        default="./data/FVCOM/neighbor_inds_new.npy",
+        default="./data/FVCOM/neighbor_inds.npy",
         help="Output file for neighbor indices",
     )
     return parser.parse_args()
