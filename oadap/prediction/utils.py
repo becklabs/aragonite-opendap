@@ -1,30 +1,35 @@
 import numpy as np
 import pandas as pd
-from scipy.spatial import KDTree
 import PyCO2SYS
-from scipy.special import erf, erfc
+from scipy.special import erfc
 
+def grid_to_swath(grid: np.ndarray, values: np.ndarray, time: pd.DatetimeIndex):
+    """
+    Convert a grid of values to a swath dataset.
 
-def closest_point_grid(lat, lon, lat_grid, lon_grid):
-    coordinates = pd.DataFrame({'longitude': lon_grid.ravel(), 'latitude': lat_grid.ravel()})[['latitude', 'longitude']].to_numpy()
-    tree = KDTree(coordinates)
-    dist, idx = tree.query([lat, lon])
-    index_pair = np.unravel_index(idx, lat_grid.shape)
+    Arguments:
+    grid: 2D array of shape (n, 2) where each row is a pair of coordinates (longitude, latitude)
+    values: 2D array of shape (n, m) where n is the number of points and m is the time dimension
+    time: 1D array of datetime objects (m)
 
-    return index_pair
-
-def adjacent_grid_points(i, j):
-    left = (i, j+1)
-    right = (i, j-1)
-    above = (i-1, j)
-    below = (i+1, j)
+    Returns:
+    xy: 2D array of shape (n*m, 2) where each row is a pair of coordinates (longitude, latitude)
+    values: 1D array of shape (n*m,) where n is the number of points
+    time: 1D array of datetime objects (n*m)
+    """
+    n, m = values.shape
     
-    return (left, right, above, below)
+    # Repeat grid coordinates for each time step
+    xy = np.tile(grid, (m, 1))
+    
+    # Flatten values array
+    flat_values = values.ravel()
+    
+    # Repeat time array for each grid point
+    repeated_time = np.repeat(time, n)
+    
+    return xy, flat_values, repeated_time
 
-def closest_point(point, points):
-    points = np.asarray(points)
-    dist_2 = np.sum((points - point)**2, axis=1)
-    return np.argmin(dist_2)
 
 def chauvenet(array):
     mean = array.mean()           # Mean of incoming array
