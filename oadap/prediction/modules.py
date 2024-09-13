@@ -9,7 +9,7 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset
 from scipy.spatial import KDTree
 
-from .tcn.preprocessing import group, create_windows, reconstruct_T, reconstruct_data
+from .tcn.preprocessing import group, create_windows, reconstruct_field, reconstruct_data
 from .tcn.utils import load_config, set_device, load_model
 
 
@@ -53,7 +53,7 @@ class TCNModule:
 
     def predict(
         self, surface: np.ndarray, time: pd.DatetimeIndex
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    ) -> Tuple[np.ndarray, np.ndarray, pd.DatetimeIndex]:
 
         nx, nt = surface.shape
         assert nx == self.grid_xy.shape[0]
@@ -141,9 +141,9 @@ class TCNModule:
         T_bar = preds_arr[..., 0]
         q = preds_arr[..., 1:]
 
-        pred_anomalies = reconstruct_T(
+        pred_anomalies = reconstruct_field(
             phi=self.fvcom_phi[self.grid_idx_map][self.grid_neighbors_mask],
-            T_bar=T_bar,
+            mu=T_bar,
             q=q,
         )
         pred_data = reconstruct_data(
@@ -154,7 +154,7 @@ class TCNModule:
             ],
         )
 
-        return pred_data, time_windowed
+        return pred_data, self.grid_xy[self.grid_neighbors_mask], time_windowed
 
 
 class TAlkRegressionModule:

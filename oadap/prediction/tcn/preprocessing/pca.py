@@ -3,22 +3,22 @@ from typing import Tuple, Optional
 import numpy as np
 
 
-def reconstruct_T(phi: np.ndarray, q: np.ndarray, T_bar: np.ndarray) -> np.ndarray:
+def reconstruct_field(phi: np.ndarray, q: np.ndarray, mu: np.ndarray) -> np.ndarray:
     """
-    Reconstruct the 4D temperature field from the decomposition
+    Reconstruct the 4D field from the decomposition
     """
     nx, nz, _ = phi.shape
     _, nt, _ = q.shape
 
     assert phi.shape == (nx, nz, 2)
     assert q.shape == (nx, nt, 2)
-    assert T_bar.shape == (nx, nt) or T_bar.shape == (nx, nt, 1)
+    assert mu.shape == (nx, nt) or mu.shape == (nx, nt, 1)
 
-    T = np.zeros((nx, nt, nz))
+    field = np.zeros((nx, nt, nz))
     for i in range(nx):
         for t in range(nt):
-            T[i, t] = np.dot(phi[i], q[i, t]) + T_bar[i, t]
-    return T
+            field[i, t] = np.dot(phi[i], q[i, t]) + mu[i, t]
+    return field
 
 
 def svd_decompose(
@@ -52,7 +52,7 @@ def svd_decompose(
     
 
     if check:
-        proj = reconstruct_T(phi, q, mu)
+        proj = reconstruct_field(phi, q, mu)
         # proj = np.einsum("ijk,ikl->ijl", phi, q) + mu.transpose(0, 2, 1)  # (nx, nz, nt)
         # proj = proj.transpose((0, 2, 1))  # (nx, nt, nz)
         assert np.allclose(proj, data, atol=0.01), "Reconstruction is incorrect"

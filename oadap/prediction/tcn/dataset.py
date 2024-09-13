@@ -3,7 +3,7 @@ from sklearn.preprocessing import StandardScaler
 from torch.utils.data import Dataset
 
 
-class TempDataset(Dataset):
+class WindowedDataset(Dataset):
     def __init__(self, X, y, X_scaler=None, y_scaler=None, device='cpu'):
         N, T, C = X.shape
         X = X.reshape(N * T, C)
