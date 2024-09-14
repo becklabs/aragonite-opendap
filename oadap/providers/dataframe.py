@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from abc import ABC, abstractmethod
 
+
 class SwathDataProvider(ABC):
     @abstractmethod
     def subset(
@@ -13,7 +14,7 @@ class SwathDataProvider(ABC):
         lon_max: float,
         start: pd.Timestamp,
         end: pd.Timestamp,
-    ) -> Tuple[np.ndarray, np.ndarray, pd.Series]:
+    ) -> Tuple[np.ndarray, np.ndarray, pd.DatetimeIndex]:
         """
         Subset the swath data to a bounding box and time range.
 
@@ -34,13 +35,13 @@ class SwathDataProvider(ABC):
 class DataFrameProvider(SwathDataProvider):
     def __init__(
         self,
-        data_dir: str,
+        path: str,
         lat_col: str,
         lon_col: str,
         time_col: str,
         variable_col: str,
     ):
-        self.df = pd.read_csv(data_dir)
+        self.df = pd.read_csv(path)
         self.df[time_col] = pd.to_datetime(self.df[time_col])
         self.df = self.df.dropna(subset=[lat_col, lon_col, time_col, variable_col])
 
@@ -57,7 +58,7 @@ class DataFrameProvider(SwathDataProvider):
         lon_max: float,
         start: pd.Timestamp,
         end: pd.Timestamp,
-    ) -> Tuple[np.ndarray, np.ndarray, pd.Series]:
+    ) -> Tuple[np.ndarray, np.ndarray, pd.DatetimeIndex]:
         subset_df = self.df[
             (self.df[self.lat_col] >= lat_min)
             & (self.df[self.lat_col] <= lat_max)
@@ -69,16 +70,19 @@ class DataFrameProvider(SwathDataProvider):
         return (
             subset_df[[self.variable_col]].values,
             subset_df[[self.lon_col, self.lat_col]].values,
-            subset_df[self.time_col],
+            pd.DatetimeIndex(subset_df[self.time_col]),  # type: ignore
         )
 
 
 class MWRASalinity(DataFrameProvider):
-    def __init__(self, data_dir: str):
+    DEPTH_THRESHOLD = 3
+
+    def __init__(self, path: str):
         super().__init__(
-            data_dir,
+            path,
             lat_col="Latitude",
             lon_col="Longitude",
             time_col="Date",
             variable_col="Salinity",
         )
+        self.df = self.df[self.df["Depth"] < self.DEPTH_THRESHOLD]  # Surface only
