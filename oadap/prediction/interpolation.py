@@ -2,16 +2,16 @@ import numpy as np
 import pandas as pd
 import datetime
 from abc import ABC, abstractmethod
-from typing import Callable, Union, Tuple, Dict
+from typing import Callable, Union, Tuple, Dict, Any
 from pykrige.ok3d import OrdinaryKriging3D
-from scipy.interpolate import LinearNDInterpolator
-from sklearn.neighbors import KDTree
 from sklearn.preprocessing import StandardScaler
+
 
 class Interpolator(ABC):
     """
     Interface for Interpolators
     """
+
     @abstractmethod
     def fit(self, xy: np.ndarray, values: np.ndarray, time: pd.DatetimeIndex):
         """
@@ -19,7 +19,7 @@ class Interpolator(ABC):
 
         Arguments:
         xy: 2D array of shape (n, 2) where each row is a pair of coordinates (longitude, latitude)
-        values: 1D array of shape (n,) where n is the number of points 
+        values: 1D array of shape (n,) where n is the number of points
         time: 1D array of datetime objects (n)
         """
 
@@ -36,14 +36,16 @@ class Interpolator(ABC):
         2D array of shape (m, n) where each row is the interpolated values at grid points for a day
         """
 
+
 class KrigingInterpolator(Interpolator):
     """
     Kriging Interpolation with a specified variogram model
     """
-    def __init__(self, **model_kwargs: Dict):
+
+    def __init__(self, **model_kwargs: Any):
         self.time_range: Union[Tuple, None] = None
         self.model_kwargs = model_kwargs
-    
+
     def fit(self, xy: np.ndarray, values: np.ndarray, time: pd.DatetimeIndex):
         assert values.shape[0] == xy.shape[0]
         assert len(time) == xy.shape[0]
@@ -58,29 +60,30 @@ class KrigingInterpolator(Interpolator):
             values,
             verbose=False,
             enable_plotting=False,
-            **self.model_kwargs # type: ignore
+            **self.model_kwargs,  # type: ignore
         )
-    
+
     def predict(self, grid: np.ndarray, days: pd.DatetimeIndex) -> np.ndarray:
-        assert grid.shape[1] == 2, "grid should have shape (n, 2) where n is the number of points"
+        assert (
+            grid.shape[1] == 2
+        ), "grid should have shape (n, 2) where n is the number of points"
         assert self.time_range is not None, "Model not fitted"
-        
+
         day_indices = (days - self.time_range[0]).days.values
-        
+
         x = np.tile(grid[:, 0], len(days))
         y = np.tile(grid[:, 1], len(days))
         t = np.repeat(day_indices, len(grid))
-        
-        predictions, _ = self.model.execute('points', x, y, t)
-        
-        return predictions.reshape(len(days), len(grid)).T
 
+        predictions, _ = self.model.execute("points", x, y, t)
+
+        return predictions.reshape(len(days), len(grid)).T
 
 class ScaledKrigingInterpolator(Interpolator):
     """
     Kriging Interpolation with a specified variogram model and input/output scaling.
     """
-    def __init__(self, **model_kwargs: Dict):
+    def __init__(self, **model_kwargs: Any):
         self.time_min: Union[pd.Timestamp, None] = None
         self.model_kwargs = model_kwargs
         self.xy_scaler = StandardScaler()
@@ -132,147 +135,75 @@ class ScaledKrigingInterpolator(Interpolator):
         return predictions.reshape(len(days), len(grid)).T
 
 
-class Fast3DInterpolator(Interpolator):
-    """
-    A faster alternative to kriging using LinearNDInterpolator and KDTree
-    for 3D interpolation (x, y, time)
-    """
-    def __init__(self, n_neighbors: int = 10):
-        self.n_neighbors = n_neighbors
-        self.interpolator: Union[LinearNDInterpolator, None] = None
-        self.kdtree: Union[KDTree, None] = None
-        self.time_range: Union[Tuple, None] = None
-
-    def fit(self, xy: np.ndarray, values: np.ndarray, time: pd.DatetimeIndex):
-        assert values.shape[0] == xy.shape[0]
-        assert len(time) == xy.shape[0]
-        assert xy.shape[1] == 2
-
-        self.time_range = (time.min(), time.max())
-        time_days = (time - self.time_range[0]).days.values
-
-        points_3d = np.column_stack((xy, time_days.reshape(-1, 1)))
-
-        self.interpolator = LinearNDInterpolator(points_3d, values, fill_value=np.nan)
-
-        self.kdtree = KDTree(points_3d)
-
-    def predict(self, grid: np.ndarray, days: pd.DatetimeIndex) -> np.ndarray:
-        assert grid.shape[1] == 2, "grid should have shape (n, 2) where n is the number of points"
-        assert self.time_range is not None, "Model not fitted"
-        assert self.interpolator is not None, "Model not fitted"
-        assert self.kdtree is not None, "Model not fitted"
-
-        day_indices = (days - self.time_range[0]).days.values
-
-        query_points = np.column_stack((
-            np.tile(grid[:, 0], len(days)),
-            np.tile(grid[:, 1], len(days)),
-            np.repeat(day_indices, len(grid))
-        ))
-
-        results = self.interpolator(query_points)
-
-        # Handle NaN values using KNN
-        nan_mask = np.isnan(results)
-        if np.any(nan_mask):
-            nan_points = query_points[nan_mask]
-            _, indices = self.kdtree.query(nan_points, k=self.n_neighbors)
-            results[nan_mask] = np.nanmean(results[indices], axis=1)
-
-        return results.reshape(len(days), len(grid)).T
-
 class TimeSubsetInterpolator(Interpolator):
     """
-    Interpolates data using a given time subset
-    Assumes time is on a regular daily interval
+    An Interpolator that trains a model for each day in a specified date range,
+    using data from that day and up to `n_days` before and after,
+    ensuring each model includes at least one data point.
     """
-    def __init__(self, n_days: int, interpolator_factory: Callable[..., Interpolator]):
+
+    def __init__(
+        self,
+        n_days: int,
+        start_date: pd.Timestamp,
+        end_date: pd.Timestamp,
+        interpolator_factory: Callable[..., Interpolator],
+    ):
         self.n_days = n_days
         self.interpolator_factory = interpolator_factory
+        self.start_date = start_date
+        self.end_date = end_date
         self.models: Dict[datetime.date, Interpolator] = {}
 
     def fit(self, xy: np.ndarray, values: np.ndarray, time: pd.DatetimeIndex):
-        assert values.shape[0] == xy.shape[0]
-        assert xy.shape[1] == 2
-
-        days = time.unique().sort_values()
-        for i in range(self.n_days, len(days) - self.n_days):
-            subset = days[i-self.n_days:i+self.n_days+1]
-            subset_idx = time.isin(subset)
-            print(f"Fitting model for {days[i].date()} with {sum(subset_idx)} points")
-
-            model = self.interpolator_factory()
-            model.fit(xy[subset_idx], values[subset_idx], time[subset_idx])
-
-            self.models[days[i].date()] = model
-    
-    def predict(self, grid: np.ndarray, days: pd.DatetimeIndex) -> np.ndarray:
-        assert grid.shape[1] == 2, "grid should have shape (n, 2) where n is the number of points"
-        
-        predictions = []
-        for day in days:
-            if day.date() not in self.models:
-                raise ValueError(f"Model for {day.date()} not fitted")
-            model = self.models[day.date()]
-            predictions.append(model.predict(grid, pd.DatetimeIndex([day])))
-        
-        return np.hstack(predictions)
-
-class PointsSubsetInterpolator(Interpolator):
-    """
-    Interpolates data using a given number of points around each day.
-    First uses points from the day itself, then from surrounding days in order of proximity.
-    """
-    def __init__(self, n_points: int, interpolator_factory: Callable[..., Interpolator]):
-        self.n_points = n_points
-        self.interpolator_factory = interpolator_factory
-        self.models: Dict[datetime.date, Interpolator] = {}
-    
-    def fit(self, xy: np.ndarray, values: np.ndarray, time: pd.DatetimeIndex):
-        assert values.shape[0] == xy.shape[0], "values and xy must have the same number of rows"
+        assert (
+            values.shape[0] == xy.shape[0]
+        ), "Mismatch in number of values and xy points"
         assert xy.shape[1] == 2, "xy should have shape (n_samples, 2)"
-        
-        # Ensure time is in date format
-        time_dates = time.normalize()
-        days = np.array(sorted(time_dates.unique()))
-        
-        for i, current_day in enumerate(days):
-            included_days = [current_day]
-            subset_idx = (time_dates == current_day)
-            
-            offset = 1
-            while subset_idx.sum() < self.n_points and (i - offset >= 0 or i + offset < len(days)):
-                # Include previous day
-                if i - offset >= 0:
-                    prev_day = days[i - offset]
-                    included_days.append(prev_day)
-                # Include next day
-                if i + offset < len(days):
-                    next_day = days[i + offset]
-                    included_days.append(next_day)
-                subset_idx = time_dates.isin(included_days)
-                offset += 1
 
-            num_points = subset_idx.sum()
-            if num_points == 0:
-                raise ValueError(f"No data points available to fit model for {current_day.date()}")
-            
-            print(f"Fitting model for {current_day.date()} with {num_points} points")
+        days = pd.date_range(self.start_date, self.end_date, freq="D")
+
+        data_days = time.normalize().unique().sort_values()
+
+        for day in days:
+            # Always include data from the current day
+            collected_days = [day.normalize()]
+
+            # Collect up to n_days before the current day that have data
+            days_before = data_days[data_days < day.normalize()].sort_values(
+                ascending=False
+            )
+            days_before = days_before[: self.n_days]
+
+            # Collect up to n_days after the current day that have data
+            days_after = data_days[data_days > day.normalize()].sort_values()
+            days_after = days_after[: self.n_days]
+
+            collected_days = list(days_before) + collected_days + list(days_after)
+
+            subset_idx = time.normalize().isin(collected_days)
+
+            if not subset_idx.any():
+                continue  # Skip if no data points are found
+
+            print(
+                f"Fitting model for {day.date()} with {subset_idx.sum()} points from {[d.date().strftime('%Y-%m-%d') + f'({time.isin([d]).sum()})' for d in collected_days]}"
+            )
+
             model = self.interpolator_factory()
             model.fit(xy[subset_idx], values[subset_idx], time[subset_idx])
-            self.models[current_day.date()] = model
-        
+
+            self.models[day.date()] = model
+
     def predict(self, grid: np.ndarray, days: pd.DatetimeIndex) -> np.ndarray:
         assert grid.shape[1] == 2, "grid should have shape (n_points, 2)"
-        
+
         predictions = []
         for day in days:
             day_date = day.normalize().date()
             if day_date not in self.models:
                 raise ValueError(f"Model for {day_date} not fitted")
             model = self.models[day_date]
-            day_prediction = model.predict(grid, pd.DatetimeIndex([day]))
-            predictions.append(day_prediction)
-        
+            predictions.append(model.predict(grid, pd.DatetimeIndex([day])))
+
         return np.hstack(predictions)
