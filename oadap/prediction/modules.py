@@ -161,8 +161,15 @@ class TAlkRegressionModule:
     def __init__(self, checkpoint_path: str):
         self.model = joblib.load(checkpoint_path)
 
-    def predict(self, data: pd.DataFrame, salinity_col: str) -> pd.Series:
-        X = data[salinity_col].values.reshape(-1, 1)
+    def predict(self, salinity: np.ndarray) -> np.ndarray:
+        input_shape = salinity.shape
+        X = salinity.reshape(-1, 1)
+        y_pred = self.model.predict(X)
+        y_pred = np.array(y_pred).reshape(input_shape)
+        return y_pred
+
+    def predict_df(self, data: pd.DataFrame, salinity_col: str) -> pd.Series:
+        X = data[salinity_col].values.reshape(-1, 1) # type: ignore
         y_pred = self.model.predict(X)
         return pd.Series(y_pred)
 
@@ -178,6 +185,59 @@ class DICRegressionModule:
         self.checkpoint = joblib.load(checkpoint_path)
 
     def predict(
+        self,
+        salinity_field: np.ndarray,  # (nx, nt, nz)
+        temperature_field: np.ndarray,  # (nx, nt, nz)
+        chlorophyll_surface: np.ndarray,  # (nx, nt)
+        time: pd.DatetimeIndex,  # (nt,)
+    ):
+        nx, nt, nz = salinity_field.shape
+
+        # Broadcast chlorophyll_surface to match the shape of salinity and temperature fields
+        chlorophyll_field = np.broadcast_to(
+            chlorophyll_surface[:, :, np.newaxis], (nx, nt, nz)
+        )
+
+        # Stack the features along the last axis to create X
+        X = np.stack([temperature_field, salinity_field, chlorophyll_field], axis=-1)  # shape (nx, nt, nz, 3)
+
+        # Reshape X to 2D array of shape (n_samples, 3)
+        X_flat = X.reshape(-1, 3)
+        n_samples = X_flat.shape[0]
+
+        # Repeat the time array to match the number of samples
+        # Each time value is repeated nx * nz times
+        time_repeated = np.repeat(time.values, nx * nz)
+        time_flat = pd.to_datetime(time_repeated)
+
+        # Create a mask for each season
+        season_masks = {season: self.SEASONS[season](time_flat) for season in self.SEASONS}
+
+        # Initialize result array
+        result_flat = np.full(n_samples, np.nan)
+
+        # Loop over seasons
+        for season in self.SEASONS:
+            mask = season_masks[season]
+            if not np.any(mask):
+                continue  # Skip if no data for this season
+
+            # Select data for the current season
+            X_season = X_flat[mask]
+            X_season_transformed = self._transform(X_season, season=season)
+
+            # Make predictions
+            y_pred, _ = self.checkpoint[season]["model"].predict(X_season_transformed)
+            y_pred = self._inverse_transform(y_pred, season=season)
+
+            # Assign predictions to the result array
+            result_flat[mask] = y_pred
+
+        # Reshape result back to (nx, nt, nz)
+        result = result_flat.reshape(nx, nt, nz)
+        return result
+
+    def predict_df(
         self,
         data: pd.DataFrame,
         salinity_col: str,
@@ -214,6 +274,35 @@ class CO2SYSAragoniteModule:
 
     def predict(
         self,
+        salinity_field: np.ndarray,
+        talk_field: np.ndarray,
+        dic_field: np.ndarray,
+        temperature_field: np.ndarray,
+        depth: np.ndarray, # (nx, nz)
+    ) -> np.ndarray:
+        nx, nt, nz = salinity_field.shape
+        depth_expanded = np.broadcast_to(depth[:, np.newaxis, :], (nx, nt, nz))
+
+        co2sys = PyCO2SYS.sys(
+            par1_type=1,  # Total Alkalinity input 1
+            par1=talk_field.reshape(-1),  # value of the first parameter
+            par2_type=2,  # DIC input 2
+            par2=dic_field.reshape(-1),  # value of the second parameter
+            salinity=salinity_field.reshape(-1), # type: ignore  # practical salinity (default 35)
+            temperature=25,  # temperature at which par1 and par2 arguments are provided in °C (default 25 °C)
+            pressure=0,  # water pressure at which par1 and par2 arguments are provided in dbar (default 0 dbar)
+            temperature_out=temperature_field.reshape(-1),  # temperature at which results will be calculated in °C
+            pressure_out=depth_expanded.reshape(-1),  # water pressure at which results will be calculated in dbar
+            opt_pH_scale=4,  # NBS 4
+            opt_k_carbonic=1,  # Roy et al 1993 1
+            opt_k_bisulfate=1,  # Dickson et al 1990 1
+            opt_total_borate=2,  # Lee et al 2010 2
+            opt_k_fluoride=1,  # Dickson and Riley 1979 1
+        )
+        return np.array(co2sys["saturation_aragonite_out"]).reshape(nx, nt, nz)
+
+    def predict_df(
+        self,
         data: pd.DataFrame,
         salinity_col: str,
         talk_col: str,
@@ -226,7 +315,7 @@ class CO2SYSAragoniteModule:
             par1=data[talk_col],
             par2_type=2,  # DIC input 2
             par2=data[dic_col],
-            salinity=data[salinity_col],  # practical salinity (default 35)
+            salinity=data[salinity_col], # type: ignore  # practical salinity (default 35)
             temperature=25,  # temperature at which par1 and par2 arguments are provided in °C (default 25 °C)
             pressure=0,  # water pressure at which par1 and par2 arguments are provided in dbar (default 0 dbar)
             temperature_out=data[
