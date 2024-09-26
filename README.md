@@ -8,5 +8,5 @@ This repository implements the framework described in *Data-Driven Modeling of 4
 
 
 <p align="center">
-	<img src="figures/OA_framework.png" alt="photo not available" width="80%" height="80%">
+	<img src="assets/OA_framework.png" alt="photo not available" width="80%" height="80%">
 </p>
