@@ -176,9 +176,9 @@ class TAlkRegressionModule:
 
 class DICRegressionModule:
     SEASONS = {
-        "October - March": lambda column: column.dt.month.isin([10, 11, 12, 1, 2, 3]),
-        "April - June": lambda column: column.dt.month.isin([4, 5, 6]),
-        "July - September": lambda column: column.dt.month.isin([7, 8, 9]),
+        "October - March": lambda column: column.month.isin([10, 11, 12, 1, 2, 3]),
+        "April - June": lambda column: column.month.isin([4, 5, 6]),
+        "July - September": lambda column: column.month.isin([7, 8, 9]),
     }
 
     def __init__(self, checkpoint_path: str):
@@ -230,8 +230,12 @@ class DICRegressionModule:
             y_pred, _ = self.checkpoint[season]["model"].predict(X_season_transformed)
             y_pred = self._inverse_transform(y_pred, season=season)
 
+            # Flatten y_pred to 1D
+            y_pred = y_pred.ravel()
+
             # Assign predictions to the result array
             result_flat[mask] = y_pred
+
 
         # Reshape result back to (nx, nt, nz)
         result = result_flat.reshape(nx, nt, nz)
