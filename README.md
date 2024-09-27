@@ -1,4 +1,4 @@
-# oadap
+# aragonite-opendap
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/release/python-380/)
 
@@ -16,7 +16,7 @@ This repository implements the framework described in *Data-Driven Modeling of 4
 1. Clone the repository and move into its directory:
 
 ```bash
-git clone https://github.com/becklabs/oadap.git && cd oadap
+git clone https://github.com/becklabs/aragonite-opendap.git && cd aragonite-opendap
 ```
 
 2. From this directory, install the `oadap` pip package in editable mode:
