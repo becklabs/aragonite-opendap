@@ -9,6 +9,30 @@ This repository implements the framework described in *Data-Driven Modeling of 4
 	<img src="assets/OA_framework.png" alt="photo not available" width="80%" height="80%">
 </p>
 
-## Setup
+## Setup 
 
+#### Install from source:
+1. Clone the repository and move into its directory:
 
+```bash
+git clone https://github.com/becklabs/oadap.git && cd RES-Q
+```
+
+2. From this directory, install the `oadap` pip package in editable mode:
+
+```
+pip install -e .
+```
+
+## Inference
+To make $\Omega_{\text{Ar}}$ predictions using the framework,  
+
+```
+python -m scripts.run_framework \
+    --start         [Required] [str]  Start date in YYYY-MM-DD format \
+    --end           [Required] [str]  End date in YYYY-MM-DD format \
+    --cache_dir     [Optional] [str]  Cache directory for joblib memory (default: intermediate_cache/) \
+    --output_nc     [Optional] [str]  Output NetCDF file path (default: aragonite_field.nc)
+```
+
+## Training
