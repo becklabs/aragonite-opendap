@@ -76,6 +76,7 @@ class KrigingInterpolator(Interpolator):
         t = np.repeat(day_indices, len(grid))
 
         predictions, _ = self.model.execute("points", x, y, t)
+        predictions = np.array(predictions.data)
 
         return predictions.reshape(len(days), len(grid)).T
 
