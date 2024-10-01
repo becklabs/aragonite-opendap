@@ -1,15 +1,24 @@
+import logging
 import pandas as pd
 import joblib
 import PyCO2SYS
 
 import numpy as np
 from typing import Tuple, List
+from tqdm import tqdm
+
+from math import ceil
 
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 from scipy.spatial import KDTree
 
-from .tcn.preprocessing import group, create_windows, reconstruct_field, reconstruct_data
+from .tcn.preprocessing import (
+    group,
+    create_windows,
+    reconstruct_field,
+    reconstruct_data,
+)
 from .tcn.utils import load_config, set_device, load_model
 
 
@@ -168,12 +177,6 @@ class TAlkRegressionModule:
         y_pred = np.array(y_pred).reshape(input_shape)
         return y_pred
 
-    def predict_df(self, data: pd.DataFrame, salinity_col: str) -> pd.Series:
-        X = data[salinity_col].values.reshape(-1, 1) # type: ignore
-        y_pred = self.model.predict(X)
-        return pd.Series(y_pred)
-
-
 class DICRegressionModule:
     SEASONS = {
         "October - March": lambda column: column.month.isin([10, 11, 12, 1, 2, 3]),
@@ -182,16 +185,35 @@ class DICRegressionModule:
     }
 
     def __init__(self, checkpoint_path: str):
+        self.logger = logging.getLogger(self.__class__.__name__)
         self.checkpoint = joblib.load(checkpoint_path)
+
 
     def predict(
         self,
-        salinity_field: np.ndarray,  # (nx, nt, nz)
-        temperature_field: np.ndarray,  # (nx, nt, nz)
-        chlorophyll_surface: np.ndarray,  # (nx, nt)
-        time: pd.DatetimeIndex,  # (nt,)
-    ):
+        salinity_field: np.ndarray,
+        temperature_field: np.ndarray,
+        chlorophyll_surface: np.ndarray,
+        time: pd.DatetimeIndex,
+        batch_size: int = 100_000,
+        pbar: bool = False,
+    ) -> np.ndarray:
+        """
+        Predict the regression output based on input fields and time.
+
+        Parameters:
+        - salinity_field (np.ndarray): Salinity data with shape (nx, nt, nz).
+        - temperature_field (np.ndarray): Temperature data with shape (nx, nt, nz).
+        - chlorophyll_surface (np.ndarray): Chlorophyll surface data with shape (nx, nt).
+        - time (pd.DatetimeIndex): Time indices with length nt.
+        - batch_size (int): Number of samples to process in each batch.
+
+        Returns:
+        - result (np.ndarray): Predicted results with shape (nx, nt, nz).
+        """
+
         nx, nt, nz = salinity_field.shape
+        self.logger.debug(f"Unpacked shapes - nx: {nx}, nt: {nt}, nz: {nz}")
 
         # Broadcast chlorophyll_surface to match the shape of salinity and temperature fields
         chlorophyll_field = np.broadcast_to(
@@ -199,19 +221,21 @@ class DICRegressionModule:
         )
 
         # Stack the features along the last axis to create X
-        X = np.stack([temperature_field, salinity_field, chlorophyll_field], axis=-1)  # shape (nx, nt, nz, 3)
+        X = np.stack([temperature_field, salinity_field, chlorophyll_field], axis=-1) # (nx, nt, nz, 3)
 
         # Reshape X to 2D array of shape (n_samples, 3)
         X_flat = X.reshape(-1, 3)
         n_samples = X_flat.shape[0]
 
         # Repeat the time array to match the number of samples
-        # Each time value is repeated nx * nz times
         time_repeated = np.repeat(time.values, nx * nz)
         time_flat = pd.to_datetime(time_repeated)
 
         # Create a mask for each season
-        season_masks = {season: self.SEASONS[season](time_flat) for season in self.SEASONS}
+        season_masks = {}
+        for season, condition in self.SEASONS.items():
+            mask = condition(time_flat)
+            season_masks[season] = mask
 
         # Initialize result array
         result_flat = np.full(n_samples, np.nan)
@@ -220,43 +244,50 @@ class DICRegressionModule:
         for season in self.SEASONS:
             mask = season_masks[season]
             if not np.any(mask):
+                self.logger.warning(
+                    f"No data available for season: {season}. Skipping."
+                )
                 continue  # Skip if no data for this season
 
-            # Select data for the current season
-            X_season = X_flat[mask]
-            X_season_transformed = self._transform(X_season, season=season)
+            # Get the indices where mask is True
+            mask_indices = np.where(mask)[0]
+            total_mask_samples = len(mask_indices)
+            total_batches = ceil(total_mask_samples / batch_size)
 
-            # Make predictions
-            y_pred, _ = self.checkpoint[season]["model"].predict(X_season_transformed)
-            y_pred = self._inverse_transform(y_pred, season=season)
+            # Loop over batches
+            if pbar:
+                batch_iterator = tqdm(range(total_batches), desc=f"Processing Batches for Season: {season}", unit="batch")
+            else:
+                batch_iterator = range(total_batches)
 
-            # Flatten y_pred to 1D
-            y_pred = y_pred.ravel()
+            for batch_num in batch_iterator:
+                start_idx = batch_num * batch_size
+                end_idx = min(start_idx + batch_size, total_mask_samples)
 
-            # Assign predictions to the result array
-            result_flat[mask] = y_pred
+                # Get the batch indices
+                batch_indices = mask_indices[start_idx:end_idx]
 
+                # Select data for the current batch
+                X_batch = X_flat[batch_indices]
+
+                # Transform the data
+                X_batch_transformed = self._transform(X_batch, season=season)
+
+                # Make predictions
+                model = self.checkpoint[season]["model"]
+                y_pred, _ = model.predict(X_batch_transformed)
+
+                # Inverse transform the predictions
+                y_pred = self._inverse_transform(y_pred, season=season)
+
+                # Flatten y_pred to 1D if necessary
+                y_pred = y_pred.ravel()
+
+                # Assign predictions to the result array
+                result_flat[batch_indices] = y_pred
 
         # Reshape result back to (nx, nt, nz)
         result = result_flat.reshape(nx, nt, nz)
-        return result
-
-    def predict_df(
-        self,
-        data: pd.DataFrame,
-        salinity_col: str,
-        temperature_col: str,
-        chlorophyll_col: str,
-        time_col: str,
-    ):
-        result = pd.Series(index=data.index, dtype=float)
-        for season in self.SEASONS:
-            mask = self.SEASONS[season](data[time_col])
-            X = data[mask][[temperature_col, salinity_col, chlorophyll_col]].values
-            X = self._transform(X, season=season)
-            y_pred, _ = self.checkpoint[season]["model"].predict(X)
-            y_pred = self._inverse_transform(y_pred, season=season).reshape(-1)
-            result.loc[mask] = y_pred
         return result
 
     def _transform(self, X, season: str):
@@ -274,64 +305,131 @@ class DICRegressionModule:
 
 class CO2SYSAragoniteModule:
     def __init__(self):
-        pass
+        """
+        Initialize the CO2SYSAragoniteModule.
+        """
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.debug("Initialized CO2SYSAragoniteModule.")
 
     def predict(
         self,
-        salinity_field: np.ndarray,
-        talk_field: np.ndarray,
-        dic_field: np.ndarray,
-        temperature_field: np.ndarray,
-        depth: np.ndarray, # (nx, nz)
+        salinity_field: np.ndarray,  
+        talk_field: np.ndarray,  
+        dic_field: np.ndarray,  
+        temperature_field: np.ndarray,  
+        depth: np.ndarray,  
+        batch_size: int = 100_000,  
+        pbar: bool = False,
     ) -> np.ndarray:
+        """
+        Predict saturation aragonite using PyCO2SYS with batch processing.
+
+        Parameters:
+        - salinity_field (np.ndarray): Salinity data with shape (nx, nt, nz).
+        - talk_field (np.ndarray): Total Alkalinity data with shape (nx, nt, nz).
+        - dic_field (np.ndarray): DIC data with shape (nx, nt, nz).
+        - temperature_field (np.ndarray): Temperature data with shape (nx, nt, nz).
+        - depth (np.ndarray): Depth data with shape (nx, nz).
+        - batch_size (int): Number of samples to process in each batch.
+
+        Returns:
+        - np.ndarray: Saturation aragonite output with shape (nx, nt, nz).
+        """
+        self.logger.info("Starting prediction process with batch processing.")
+        self.logger.debug(
+            f"Input shapes - salinity_field: {salinity_field.shape}, "
+            f"talk_field: {talk_field.shape}, dic_field: {dic_field.shape}, "
+            f"temperature_field: {temperature_field.shape}, depth: {depth.shape}"
+        )
+        self.logger.debug(f"Batch size set to: {batch_size}")
+
         nx, nt, nz = salinity_field.shape
+        self.logger.debug(f"Unpacked shapes - nx: {nx}, nt: {nt}, nz: {nz}")
+
+        # Expand depth to match the shape of other fields
+        self.logger.info("Broadcasting depth to match salinity and temperature fields.")
         depth_expanded = np.broadcast_to(depth[:, np.newaxis, :], (nx, nt, nz))
-
-        co2sys = PyCO2SYS.sys(
-            par1_type=1,  # Total Alkalinity input 1
-            par1=talk_field.reshape(-1),  # value of the first parameter
-            par2_type=2,  # DIC input 2
-            par2=dic_field.reshape(-1),  # value of the second parameter
-            salinity=salinity_field.reshape(-1), # type: ignore  # practical salinity (default 35)
-            temperature=25,  # temperature at which par1 and par2 arguments are provided in °C (default 25 °C)
-            pressure=0,  # water pressure at which par1 and par2 arguments are provided in dbar (default 0 dbar)
-            temperature_out=temperature_field.reshape(-1),  # temperature at which results will be calculated in °C
-            pressure_out=depth_expanded.reshape(-1),  # water pressure at which results will be calculated in dbar
-            opt_pH_scale=4,  # NBS 4
-            opt_k_carbonic=1,  # Roy et al 1993 1
-            opt_k_bisulfate=1,  # Dickson et al 1990 1
-            opt_total_borate=2,  # Lee et al 2010 2
-            opt_k_fluoride=1,  # Dickson and Riley 1979 1
+        self.logger.debug(
+            f"depth_expanded shape after broadcasting: {depth_expanded.shape}"
         )
-        return np.array(co2sys["saturation_aragonite_out"]).reshape(nx, nt, nz)
 
-    def predict_df(
-        self,
-        data: pd.DataFrame,
-        salinity_col: str,
-        talk_col: str,
-        dic_col: str,
-        temperature_col: str,
-        depth_col: str,
-    ) -> pd.Series:
-        co2sys = PyCO2SYS.sys(
-            par1_type=1,  # Total Alkalinity input 1
-            par1=data[talk_col],
-            par2_type=2,  # DIC input 2
-            par2=data[dic_col],
-            salinity=data[salinity_col], # type: ignore  # practical salinity (default 35)
-            temperature=25,  # temperature at which par1 and par2 arguments are provided in °C (default 25 °C)
-            pressure=0,  # water pressure at which par1 and par2 arguments are provided in dbar (default 0 dbar)
-            temperature_out=data[
-                temperature_col
-            ],  # temperature at which results will be calculated in °C
-            pressure_out=data[
-                depth_col
-            ],  # water pressure at which results will be calculated in dbar
-            opt_pH_scale=4,  # NBS 4
-            opt_k_carbonic=1,  # Roy et al 1993 1
-            opt_k_bisulfate=1,  # Dickson et al 1990 1
-            opt_total_borate=2,  # Lee et al 2010 2
-            opt_k_fluoride=1,  # Dickson and Riley 1979 1
-        )
-        return pd.Series(co2sys["saturation_aragonite_out"])
+        # Reshape all fields to 1D arrays for processing
+        self.logger.info("Reshaping input fields for batch processing.")
+        talk_flat = talk_field.reshape(-1)
+        dic_flat = dic_field.reshape(-1)
+        salinity_flat = salinity_field.reshape(-1)
+        temperature_out_flat = temperature_field.reshape(-1)
+        pressure_out_flat = depth_expanded.reshape(-1)
+        n_samples = salinity_flat.shape[0]
+        self.logger.debug(f"Total number of samples: {n_samples}")
+
+        # Calculate the number of batches
+        total_batches = ceil(n_samples / batch_size)
+        self.logger.info(f"Total batches to process: {total_batches}")
+
+        # Initialize the result array
+        result_flat = np.empty(n_samples, dtype=np.float64)
+        self.logger.debug(f"Initialized result_flat with shape: {result_flat.shape}")
+
+        # Process data in batches
+        if pbar:
+            batch_iterator = tqdm(range(total_batches), desc="Processing Batches", unit="batch")
+        else:
+            batch_iterator = range(total_batches)
+        for batch_num in batch_iterator:
+            start_idx = batch_num * batch_size
+            end_idx = min(start_idx + batch_size, n_samples)
+            current_batch_size = end_idx - start_idx
+
+            # Extract batch data
+            batch_talk = talk_flat[start_idx:end_idx]
+            batch_dic = dic_flat[start_idx:end_idx]
+            batch_salinity = salinity_flat[start_idx:end_idx]
+            batch_temperature_out = temperature_out_flat[start_idx:end_idx]
+            batch_pressure_out = pressure_out_flat[start_idx:end_idx]
+
+            self.logger.debug(
+                f"Batch data shapes - talk: {batch_talk.shape}, dic: {batch_dic.shape}, "
+                f"salinity: {batch_salinity.shape}, temperature_out: {batch_temperature_out.shape}, "
+                f"pressure_out: {batch_pressure_out.shape}"
+            )
+
+            # Perform CO2SYS calculations
+            try:
+                co2sys = PyCO2SYS.sys(
+                    par1_type=1,  # Total Alkalinity input 1
+                    par1=batch_talk,  # Total Alkalinity
+                    par2_type=2,  # DIC input 2
+                    par2=batch_dic,  # DIC
+                    salinity=batch_salinity, # Practical Salinity # type: ignore
+                    temperature=25,  # Temperature at which par1 and par2 are provided in °C
+                    pressure=0,  # Water pressure at which par1 and par2 are provided in dbar
+                    temperature_out=batch_temperature_out,  # Output temperature in °C
+                    pressure_out=batch_pressure_out,  # Output pressure in dbar
+                    opt_pH_scale=4,  # NBS scale
+                    opt_k_carbonic=1,  # Roy et al. 1993
+                    opt_k_bisulfate=1,  # Dickson et al. 1990
+                    opt_total_borate=2,  # Lee et al. 2010
+                    opt_k_fluoride=1,  # Dickson and Riley 1979
+                )
+                self.logger.debug(f"PyCO2SYS.sys output keys: {co2sys.keys()}")
+            except Exception as e:
+                self.logger.exception(
+                    f"Error during PyCO2SYS.sys execution for batch {batch_num + 1}: {e}"
+                )
+                raise
+
+            # Extract saturation_aragonite_out and assign to result
+            saturation_aragonite = co2sys["saturation_aragonite_out"]
+            self.logger.debug(
+                f"Saturation aragonite output shape: {saturation_aragonite.shape}"
+            )
+
+            # Assign the batch results to the result_flat array
+            result_flat[start_idx:end_idx] = saturation_aragonite
+
+        # Reshape the flat result back to (nx, nt, nz)
+        result = result_flat.reshape(nx, nt, nz)
+        self.logger.debug(f"Final result shape: {result.shape}")
+
+        return result

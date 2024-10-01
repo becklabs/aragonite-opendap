@@ -7,6 +7,7 @@ from pydap.client import open_url
 from typing import Optional, List, Union
 from pydap.cas.urs import setup_session
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 
 
 def argclosest(arr, val):
@@ -67,13 +68,19 @@ class NASA_OPeNDAP(ABC):
                 url = self.get_granule_url(day)
                 dataset = open_url(url, session=self.session)
                 if self.time_variable is not None:
-                    variable = dataset[self.variable][0, lat_low:lat_high, lon_low:lon_high]
+                    variable = dataset[self.variable][
+                        0, lat_low:lat_high, lon_low:lon_high
+                    ]
                 else:
-                    variable = dataset[self.variable][lat_low:lat_high, lon_low:lon_high]
+                    variable = dataset[self.variable][
+                        lat_low:lat_high, lon_low:lon_high
+                    ]
                 variable_data = variable.data.squeeze()
 
                 # Replace fill values with NaN
-                nans = np.isclose(variable_data, variable.attributes[self.fill_value_attr])
+                nans = np.isclose(
+                    variable_data, variable.attributes[self.fill_value_attr]
+                )
                 variable_data = variable_data.astype(np.float32)
                 variable_data[nans] = np.nan
 
@@ -87,9 +94,13 @@ class NASA_OPeNDAP(ABC):
 
             except Exception as e:
                 if attempt < retries - 1:  # if it's not the last attempt
-                    logging.warning(f"Attempt {attempt + 1} failed: {str(e)}. Retrying...")
+                    logging.warning(
+                        f"Attempt {attempt + 1} failed: {str(e)}. Retrying..."
+                    )
                 else:
-                    logging.error(f"All {retries} attempts failed. Last error: {str(e)}")
+                    logging.error(
+                        f"All {retries} attempts failed. Last error: {str(e)}"
+                    )
                     raise  # re-raise the last exception
 
     def subset(
@@ -102,6 +113,7 @@ class NASA_OPeNDAP(ABC):
         end: pd.Timestamp,
         workers: int = 1,
         retries: int = 3,
+        pbar: bool = False,
     ):
         """
         Subset the dataset to a bounding box and time range
@@ -113,6 +125,8 @@ class NASA_OPeNDAP(ABC):
             Start and end dates for the time range
         - workers: int
             Number of worker threads to use for parallel processing
+        - pbar: bool
+            Whether to display a progress bar
 
         Returns:
         - data (n_lons, n_lats, n_days)
@@ -145,19 +159,30 @@ class NASA_OPeNDAP(ABC):
         with ThreadPoolExecutor(max_workers=workers) as executor:
             future_to_day = {
                 executor.submit(
-                    self._process_day, day, lat_low, lat_high, lon_low, lon_high, retries
+                    self._process_day,
+                    day,
+                    lat_low,
+                    lat_high,
+                    lon_low,
+                    lon_high,
+                    retries,
                 ): i
                 for i, day in enumerate(date_range)
             }
 
-            for future in as_completed(future_to_day):
+            if pbar:
+                iterator = tqdm(as_completed(future_to_day), total=len(future_to_day))
+            else:
+                iterator = as_completed(future_to_day)
+
+            for future in iterator:
                 day_index = future_to_day[future]
                 try:
                     output[day_index] = future.result()
                 except Exception as exc:
                     print(f"Day {date_range[day_index]} generated an exception: {exc}")
 
-        output = output.transpose((2, 1, 0)) # (n_lons, n_lats, n_days)
+        output = output.transpose((2, 1, 0))  # (n_lons, n_lats, n_days)
 
         assert self.grid_lats is not None
         assert self.grid_lons is not None

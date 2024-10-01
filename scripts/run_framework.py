@@ -59,13 +59,16 @@ end = pd.Timestamp(args.end)
 cache_dir = args.cache_dir
 output_netcdf_path = args.output_nc
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,  # Set to INFO for a reasonable amount of logging
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.FileHandler("script.log"), logging.StreamHandler()],
-)
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # Set the logging level to INFO
+file_handler = logging.FileHandler('script.log')
+stream_handler = logging.StreamHandler()
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+stream_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+logger.addHandler(stream_handler)
+logger.propagate = False
 
 # CONSTANTS
 WINDOW_SIZE = 20
@@ -98,8 +101,8 @@ lon_max = np.max(fvcom_xy[:, 0])
 sal_tcn_config = "config/tcn/v0.yaml"
 temp_tcn_config = "config/tcn/v0.yaml"
 
-sal_tcn_checkpoint = "checkpoints/TCN/temperature/model_epoch_95.pth"
-temp_tcn_checkpoint = "checkpoints/TCN/salinity/model_epoch_95.pth"
+sal_tcn_checkpoint = "checkpoints/TCN/salinity/model_epoch_95.pth"
+temp_tcn_checkpoint = "checkpoints/TCN/temperature/model_epoch_95.pth"
 
 temp_fvcom_artifacts_dir = os.path.join(
     data_dir, "FVCOM", "preprocessed", "temperature", "all", "artifacts"
@@ -154,6 +157,7 @@ def fetch_temperature_data():
         start=data_start,
         end=data_end,
         workers=8,
+        pbar=True,
     )
     logger.info("Temperature data fetched.")
     return data
@@ -170,6 +174,7 @@ def fetch_chlorophyll_data():
         start=start - pd.Timedelta(days=1),
         end=end + pd.Timedelta(days=1),
         workers=8,
+        pbar=True,
     )
     logger.info("Chlorophyll data fetched.")
     return data
@@ -180,6 +185,8 @@ sal_raw, sal_xy, sal_time = fetch_salinity_data()
 sst_raw, sst_xy, sst_time = fetch_temperature_data()
 chlor_raw, chlor_xy, chlor_time = fetch_chlorophyll_data()
 
+K_to_C = lambda K: K - 273.15
+sst_raw = K_to_C(sst_raw)
 
 # INTERPOLATION FUNCTIONS
 @memory.cache
@@ -291,6 +298,7 @@ def compute_dic_field(salinity_field, temp_field):
         temperature_field=temp_field,
         chlorophyll_surface=chlor_surface,
         time=pd.date_range(start, end),
+        pbar=True,
     )
     logger.info("DIC field computed.")
     return dic_field
@@ -326,12 +334,14 @@ def compute_aragonite_field(salinity_field, temp_field, dic_field, talk_field):
         dic_field=dic_field,
         talk_field=talk_field,
         depth=depth,
+        pbar=True,
     )
     logger.info("Aragonite field computed.")
     return aragonite_field, depth
 
 
 chlor_surface = compute_chlor_surface()
+
 salinity_surface = compute_salinity_surface()
 
 temp_field = reconstruct_temp_field(sst_raw, sst_time)
