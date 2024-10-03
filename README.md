@@ -85,14 +85,11 @@ python -m scripts.run_framework \
     --output_nc data/aragonite_field_jan2018.nc
 ```
 
-The `aragonite_field_jan2018.nc` file will contain the predicted $\Omega_{\text{Ar}}$ field for each day in January 2018. Below is an animation of 
-
-The above animation visualizes the daily changes in aragonite saturation state ($\Omega_{\text{Ar}}$) across the study area for the month of January 2018, as predicted by the framework.
+The `aragonite_field_jan2018.nc` file will contain the predicted $\Omega_{\text{Ar}}$ field for each day in January 2018 and is  visualized in the animation below:
 
 <p align="center">
 	<img src="assets/aragonite_animation.gif" alt="Aragonite Saturation Animation (January 2018)" width="70%" height="70%">
 </p>
-
 
 
 ## Training
