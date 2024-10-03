@@ -4,7 +4,7 @@
 
 ## Overview
 
-This repository implements the framework described in *Data-Driven Modeling of 4D Ocean and Coastal Acidification from Surface Measurements* to predict Aragonite Saturation State ($\Omega_{Ar}$) fields for Massachusetts Bay. Satellite data sources are accessed dynamically via [PODAAC](https://podaac.jpl.nasa.gov/), enabling up-to-date, daily predictions. The predictions are served over an [OPeNDAP](https://www.earthdata.nasa.gov/engage/open-data-services-and-software/api/opendap) protocol, allowing for easy integration with existing tools and services.
+This repository implements the framework described in *Data-Driven Modeling of 4D Ocean and Coastal Acidification from Surface Measurements* to predict Aragonite Saturation State ($\Omega_{\text{Ar}}$) fields for Massachusetts Bay. Satellite data sources are accessed dynamically via [PODAAC](https://podaac.jpl.nasa.gov/), enabling up-to-date, daily predictions. The predictions are served over an [OPeNDAP](https://www.earthdata.nasa.gov/engage/open-data-services-and-software/api/opendap) protocol, allowing for easy integration with existing tools and services.
 
 <p align="center">
 	<img src="assets/OA_framework.png" alt="photo not available" width="80%" height="80%">
@@ -26,14 +26,17 @@ pip install -e .
 ```
 
 ### Configure Earthdata Credentials: 
-To access satellite datasources, you will need to create an [Earthdata Login](https://urs.earthdata.nasa.gov/). After creating an account, set the following environment variables::
+1. **Create an Earthdata Login:**
+To access satellite datasources, you will need to create an [Earthdata Login](https://urs.earthdata.nasa.gov/).
+
+2. **Set Environment Variables**: After creating an account, set the following environment variables:
 
 ```bash
 export EARTHDATA_USERNAME=<your_username>
 export EARTHDATA_PASSWORD=<your_password>
 ```
 
-Alternatively, you can add the following lines to your `~/.netrc` file:
+3. **Alternative Option (.netrc):** Instead of setting environment variables, you can add the following lines to your `~/.netrc` file:
 ```
 machine urs.earthdata.nasa.gov
     login <your_username>
@@ -63,7 +66,7 @@ wandb login
 
 
 ## Inference
-To make daily $\Omega_{Ar}$ predictions across a given date range, run the `scripts/run_framework.py` script:
+To make daily $\Omega_{\text{Ar}}$ predictions across a given date range, run the `scripts/run_framework.py` script:
 
 ```
 python -m scripts.run_framework \
@@ -82,7 +85,7 @@ python -m scripts.run_framework \
     --output_nc data/aragonite_field_jan2021.nc
 ```
 
-The `aragonite_field_jan2021.nc` file will contain the predicted $\Omega_{Ar}$ field for each day in January 2021.
+The `aragonite_field_jan2021.nc` file will contain the predicted $\Omega_{\text{Ar}}$ field for each day in January 2021.
 
 ## Training
 
