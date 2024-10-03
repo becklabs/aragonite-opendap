@@ -46,7 +46,7 @@ machine urs.earthdata.nasa.gov
 ### Download Data Artifacts:
 To run framework training and inference, you will need to download the provided static, preprocessed data artifacts:
 
-1. **Download the `data_artifacts.zip` file (~500MB) from [Google Drive](https://drive.google.com/file/d/1w9pq5Gfqottebf14BIf7gaBQy7mpHlKR/view?usp=sharing).**
+1. **Download the `data_artifacts.zip` file (~500MB) from the [Google Drive Link](https://drive.google.com/file/d/1w9pq5Gfqottebf14BIf7gaBQy7mpHlKR/view?usp=sharing).**
 2. **Extract the contents of `data_artifacts.zip` to the `data/` directory at the root of the repository:**
    
    ```bash
