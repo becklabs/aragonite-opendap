@@ -40,11 +40,11 @@ machine urs.earthdata.nasa.gov
     password <your_password>
 ```
 
-#### Download Datasets:
-The static, preprocessed data required for framework training and inference are available for download []
+#### Download Data Artifacts:
+The static, preprocessed data artifacts required for framework training and inference are available for download [here](). To setup:
 
-1. Download the dataset from the provided link.
-2. Extract the contents to the `data/` directory at the root of the repository.
+1. Download the `data_artifacts.zip` file (~500MB) from the provided link.
+2. Extract the contents of `data_artifacts.zip` to the `data/` directory at the root of the repository.
 
 #### Additional Setup (Training Only)
 Login into Weights and Biases:
