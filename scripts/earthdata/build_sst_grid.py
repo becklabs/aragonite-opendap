@@ -3,7 +3,9 @@ import logging
 import argparse
 import numpy as np
 import pandas as pd
+
 from oadap.providers.opendap import GHRSSTL4
+from oadap.utils import load_mat
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -37,13 +39,10 @@ lon_min = np.min(fvcom_xy[:, 0])
 lon_max = np.max(fvcom_xy[:, 0])
 
 
-temperature_opendap = GHRSSTL4(
-    earthdata_username=os.environ["EARTHDATA_USERNAME"],
-    earthdata_password=os.environ["EARTHDATA_PASSWORD"],
-)
+temperature_opendap = GHRSSTL4()
 
 logging.info("Pulling SST grid from GHRSSTL4")
-dummy_date = pd.Timestamp("2023-01-01")
+dummy_date = pd.Timestamp("2018-01-01")
 temp, xy, time = temperature_opendap.subset(
     lat_min=lat_min,
     lat_max=lat_max,
@@ -78,6 +77,7 @@ for i in range(nx):
         # Southwest neighbor
         if i - 1 >= 0 and j - 1 >= 0 and ocean_mask[i - 1, j - 1]:
             neighbors[i, j, 3] = np.ravel_multi_index((i - 1, j - 1), (nx, ny))
+
 
 os.makedirs(args.output_dir, exist_ok=True)
 np.save(os.path.join(args.output_dir, "neighbors.npy"), neighbors)

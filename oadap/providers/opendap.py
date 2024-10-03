@@ -3,8 +3,9 @@ from abc import ABC, abstractmethod
 import logging
 import pandas as pd  # type: ignore
 import numpy as np
+from netrc import netrc
 from pydap.client import open_url
-from typing import Optional, List, Union
+from typing import Optional, List, Tuple
 from pydap.cas.urs import setup_session
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
@@ -12,6 +13,35 @@ from tqdm import tqdm
 
 def argclosest(arr, val):
     return np.argmin(np.abs(arr - val))
+
+
+def earthdata_credentials(
+    username: Optional[str] = None, password: Optional[str] = None
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Get Earthdata credentials from parameters, environment variables, or .netrc file
+    """
+    # 1. Credentials provided as parameters
+    if username and password:
+        return username, password
+
+    # 2. Credentials provided as environment variables
+    username = os.environ.get("EARTHDATA_USERNAME")
+    password = os.environ.get("EARTHDATA_PASSWORD")
+    if username and password:
+        return username, password
+
+    # 3. Credentials provided in .netrc file
+    try:
+        auth_data = netrc().authenticators("urs.earthdata.nasa.gov")
+        if auth_data:
+            username, _, password = auth_data
+            if username and password:
+                return username, password
+    except (FileNotFoundError, TypeError):
+        pass
+
+    return None, None
 
 
 class NASA_OPeNDAP(ABC):
@@ -39,19 +69,15 @@ class NASA_OPeNDAP(ABC):
         self.add_offset_attr = add_offset_attr
         self.fill_value_attr = fill_value_attr
 
-        self.requires_auth = requires_auth
-        self.earthdata_username = earthdata_username
-        self.earthdata_password = earthdata_password
-
-        if self.requires_auth:
+        if requires_auth:
+            earthdata_username, earthdata_password = earthdata_credentials(
+                earthdata_username, earthdata_password
+            )
             if earthdata_username is None or earthdata_password is None:
-                try:
-                    earthdata_username = os.environ["EARTHDATA_USERNAME"]
-                    earthdata_password = os.environ["EARTHDATA_PASSWORD"]
-                except KeyError:
-                    raise ValueError(
-                        "Please set the EARTHDATA_USERNAME and EARTHDATA_PASSWORD environment variables"
-                    )
+                raise ValueError(
+                    "Earthdata credentials not found. Please provide them via parameters, "
+                    "environment variables, or add them to your .netrc file."
+                )
             self.session = setup_session(earthdata_username, earthdata_password)
         else:
             self.session = None
