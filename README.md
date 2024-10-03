@@ -12,7 +12,7 @@ This repository implements the framework described in *Data-Driven Modeling of 4
 
 ## Setup 
 
-### Install from source:
+### Install From Source:
 1. **Clone the repository and move into its directory:**
 
 ```bash
