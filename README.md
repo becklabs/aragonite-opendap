@@ -127,7 +127,7 @@ python -m scripts.tcn.train --config_file config/v0.yaml
 ```
 
 
-#### Total Alkalinity (TAlk) Regression
+### Total Alkalinity (TAlk) Regression
 To fit the Bayesian Ridge Regression for TAlk, run the `scripts/regression/fit_talk.py` script:
 
 ```
@@ -144,19 +144,19 @@ python -m scripts.regression.fit_talk \
     --checkpoint_path checkpoints/TAlk_regression/model.pkl
 ```
 
-#### Dissolved Inorganic Carbon (DIC) Regression
+### Dissolved Inorganic Carbon (DIC) Regression
 To fit the Gaussian Process Regression for DIC, run the `scripts/regression/fit_dic.py` script:
 
 ```bash
 python -m scripts.regression.fit_dic \
-    --csv_file data/MWRA/MWRA.csv \
-    --checkpoint_path checkpoints/DIC_regression/model.pkl
+    --csv_file      [Optional] [str]  Path to cleaned MWRA CSV file (default: data/MWRA/MWRA_clean.csv) \
+    --checkpoint_path [Optional] [str]  Path to save the model checkpoint (default: checkpoints/DIC_regression/model.pkl)
 ```
 
 **Example:**
 
 ```bash
 python -m scripts.regression.fit_dic \
-    --csv_file data/MWRA/MWRA.csv \
+    --csv_file data/MWRA/MWRA_clean.csv \
     --checkpoint_path checkpoints/DIC_regression/model.pkl
 ```
