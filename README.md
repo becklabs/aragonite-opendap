@@ -36,7 +36,7 @@ export EARTHDATA_USERNAME=<your_username>
 export EARTHDATA_PASSWORD=<your_password>
 ```
 
-3. **Alternative Option (.netrc):** Instead of setting environment variables, you can add the following lines to your `~/.netrc` file:
+3. **Alternative Option: Add Credentials to `.netrc`:** Instead of setting environment variables, you can add the following lines to your `~/.netrc` file:
 ```
 machine urs.earthdata.nasa.gov
     login <your_username>
