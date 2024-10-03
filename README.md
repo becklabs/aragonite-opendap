@@ -25,6 +25,35 @@ git clone https://github.com/becklabs/aragonite-opendap.git && cd aragonite-open
 pip install -e .
 ```
 
+#### Configure Earthdata Credentials: 
+To access satellite datasources, you will need to create an [Earthdata Login](https://urs.earthdata.nasa.gov/). Once you have an account, set the following environment variables:
+
+```bash
+export EARTHDATA_USERNAME=<your_username>
+export EARTHDATA_PASSWORD=<your_password>
+```
+
+Alternatively, you can add the following lines to your `~/.netrc` file:
+```
+machine urs.earthdata.nasa.gov
+    login <your_username>
+    password <your_password>
+```
+
+#### Download Datasets:
+The static, preprocessed data required for framework training and inference are available for download []
+
+1. Download the dataset from the provided link.
+2. Extract the contents to the `data/` directory at the root of the repository.
+
+#### Additional Setup (Training Only)
+Login into Weights and Biases:
+    
+```bash
+wandb login
+```
+
+
 ## Inference
 To make $\Omega_{\text{Ar}}$ predictions across a given date range, run the following command:
 
@@ -35,3 +64,6 @@ python -m scripts.run_framework \
     --cache_dir     [Optional] [str]  Cache directory for joblib memory (default: intermediate_cache/) \
     --output_nc     [Optional] [str]  Output NetCDF file path (default: aragonite_field.nc)
 ```
+
+## Training
+
