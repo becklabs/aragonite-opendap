@@ -1,4 +1,3 @@
-import numpy as np
 import pandas as pd
 import joblib
 import argparse
@@ -7,20 +6,19 @@ from sklearn.linear_model import BayesianRidge
 from oadap.prediction.utils import chauvenet
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    level=logging.INFO, format="%(asctime)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-
 def parse_arguments():
     parser = argparse.ArgumentParser(
-        description="Fit and save a Bayesian Ridge Regression model for TAlk."
+        description="Fit and save a Bayesian Ridge Regression model for TA."
     )
     parser.add_argument(
         "--csv_file",
         default="data/MWRA/MWRA.csv",
         type=str,
-        help="Path to raw MWRA CSV file.",
+        help="Path to the raw MWRA CSV file.",
     )
     parser.add_argument(
         "--checkpoint_path",
@@ -30,88 +28,34 @@ def parse_arguments():
     )
     return parser.parse_args()
 
-
 args = parse_arguments()
 
-# Parameters from the original notebook
-ph_var = "pH ()"  # ph out
+# Essential variables
 TA_var = "TA in (mmol/kgSW)"
 sal_var = "SAL (PSU)"
-temp_var = "TEMP (C)"
-depth_var = "DEPTH (m)"
 station_var = "STAT_ID"
-aragonite_var = "WAr out"
-TCO2_var = "TCO2 in (mmol/kgSW)"
-ox_var = "DISS_OXYGEN (mg/L)"
-fluor_var = "FLUORESCENCE (ug/L)"
-date_var = "PROF_DATE_TIME_LOCAL"
 
 # Stations to include
 stations = [
-    "F13",
-    "F06",
-    "F10",
-    "F15",
-    "N07",
-    "N18",
-    "N21",
-    "F22",
-    "N04",
-    "N01",
-    "F23",
-    "F17",
-    "N10",
-    "F05",
+    "F13", "F06", "F10", "F15", "N07", "N18",
+    "N21", "F22", "N04", "N01", "F23", "F17",
+    "N10", "F05",
 ]
 test_station = "F06"
 
 # Load the dataset
 df = pd.read_csv(args.csv_file)
 
-# Handle missing data and rename columns
-df.loc[df["VAL_QUAL"] == -1, ph_var] = np.NaN
-df = df[
-    [
-        station_var,
-        "LATITUDE",
-        "LONGITUDE",
-        depth_var,
-        temp_var,
-        sal_var,
-        ox_var,
-        fluor_var,
-        TA_var,
-        TCO2_var,
-        ph_var,
-        aragonite_var,
-        date_var,
-    ]
-]
-df.columns = [
-    "Station",
-    "Latitude",
-    "Longitude",
-    "Depth",
-    "Temperature",
-    "Salinity",
-    "Oxygen",
-    "Fluorescence",
-    "TA",
-    "TCO2",
-    "pH",
-    "Ar",
-    "Date",
-]
+# Select and rename the essential columns
+df = df[[station_var, sal_var, TA_var]]
+df.columns = ["Station", "Salinity", "TA"]
 
-# Convert 'Date' to datetime and filter out specific stations
-df["Date"] = pd.to_datetime(df["Date"])
+# Filter out specific stations
 df = df[~df["Station"].isin(["HAR", "NFAL", "POC"])]
 
 # Prepare the data
-df_model = df.copy()
-df_model = df_model[df_model["Station"].isin(stations)]
-df_model = df_model[~df_model["Salinity"].isna()]
-df_model = df_model[~df_model["TA"].isna()]
+df_model = df[df["Station"].isin(stations)]
+df_model = df_model.dropna(subset=["Salinity", "TA"])
 df_model = df_model.loc[chauvenet(df_model["TA"])]
 df_model = df_model.loc[chauvenet(df_model["Salinity"])]
 
