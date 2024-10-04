@@ -33,18 +33,18 @@ def parse_arguments():
     )
     parser.add_argument(
         "--array_path",
-        default="data/FVCOM/salinity/salinity.mat",
+        default="data/FVCOM/temperature/temp.mat",
         help="Path to the main data array",
     )
     parser.add_argument(
         "--output_dir",
-        default="data/FVCOM/preprocessed/salinity/all2/",
+        default="data/FVCOM/preprocessed/temperature/all/",
         help="Output directory for processed data",
     )
     parser.add_argument(
         "--artifacts_only",
         type=bool,
-        default=True,
+        default=False,
         help="Whether to save entire domain artifacts only",
     )
     parser.add_argument(
@@ -115,23 +115,21 @@ q_anomaly, phi_anomaly, mu_anomaly, _ = svd_decompose(
     anomalies_3d, n_modes=2, check=False, align=True
 )
 
-if artifacts_only:
-    artifacts_output_dir = os.path.join(output_dir, "artifacts/")
-    if not os.path.exists(artifacts_output_dir):
-        os.makedirs(artifacts_output_dir)
-    np.save(artifacts_output_dir + "field.npy", field)
-    np.save(artifacts_output_dir + "phi.npy", phi_anomaly)
-    np.save(artifacts_output_dir + "xy.npy", xy)
-    np.save(artifacts_output_dir + "h.npy", h)
-    np.save(artifacts_output_dir + "siglay.npy", siglay)
-    np.save(artifacts_output_dir + "climatology_days.npy", climatology_days_3d)
+artifacts_output_dir = os.path.join(output_dir, "artifacts/")
+if not os.path.exists(artifacts_output_dir):
+    os.makedirs(artifacts_output_dir)
+# np.save(artifacts_output_dir + "field.npy", field)
+np.save(artifacts_output_dir + "phi.npy", phi_anomaly)
+np.save(artifacts_output_dir + "xy.npy", xy)
+np.save(artifacts_output_dir + "climatology_days.npy", climatology_days_3d)
 
-    # Log the total size of the arrays in GB
-    total_size = sum(
-        [arr.nbytes for arr in [field, phi_anomaly, xy, h, siglay, climatology_days_3d]]
-    )
-    total_size_gb = total_size / 1e9
-    logger.info(f"Total size of the arrays: {total_size_gb:.2f} GB")
+# Log the total size of the arrays in GB
+total_size = sum(
+    [arr.nbytes for arr in [field, phi_anomaly, xy, h, siglay, climatology_days_3d]]
+)
+total_size_gb = total_size / 1e9
+logger.info(f"Total size of the arrays: {total_size_gb:.2f} GB")
+if artifacts_only:
     exit(0)
 
 
@@ -217,9 +215,9 @@ xy_sample = xy[sample_mask]
 # Save
 logger.info("Saving data")
 train_output_dir = output_dir + "train/"
-artifacts_output_dir = output_dir + "artifacts/"
+train_artifacts_output_dir = output_dir + "sample_artifacts/"
 
-for path in [train_output_dir, artifacts_output_dir]:
+for path in [train_output_dir, train_artifacts_output_dir]:
     if not os.path.exists(path):
         os.makedirs(path)
 
@@ -228,10 +226,10 @@ np.save(train_output_dir + "X.npy", X_windowed_sample)
 np.save(train_output_dir + "y.npy", y_sample)
 
 # Save artifacts
-np.save(artifacts_output_dir + "T.npy", field_sample)
-np.save(artifacts_output_dir + "phi.npy", phi_sample)
-np.save(artifacts_output_dir + "xy.npy", xy_sample)
-np.save(artifacts_output_dir + "climatology_days.npy", climatology_days_3d[sample_mask])
+np.save(train_artifacts_output_dir + "field.npy", field_sample)
+np.save(train_artifacts_output_dir + "phi.npy", phi_sample)
+np.save(train_artifacts_output_dir + "xy.npy", xy_sample)
+np.save(train_artifacts_output_dir + "climatology_days.npy", climatology_days_3d[sample_mask])
 
 # Log the total size of the arrays in GB
 total_size = sum(
