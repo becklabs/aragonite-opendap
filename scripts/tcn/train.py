@@ -58,6 +58,8 @@ def prepare_datasets(X, y, config, device):
     assert (
         X.shape[1] == y.shape[1]
     ), "X and y must have the same number of windows per location"
+    if not config["features"]["use_depth"]:
+        X = X[:, :, :, :8]
     nx, nw, nt, nf = X.shape
     _, _, nl = y.shape
     n_val_points = config["data"]["val_points"]

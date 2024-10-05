@@ -1,7 +1,7 @@
 data:
   data_dir: "data/"
-  train_file: "preprocessed/temperature/lite_sample/X.npy"
-  label_file: "preprocessed/temperature/lite_sample/y.npy"
+  train_file: "FVCOM/preprocessed/temperature/all/train/X.npy"
+  label_file: "FVCOM/preprocessed/temperature/all/train/y.npy"
   val_points: 10
   train_split: 0.8
 
@@ -10,10 +10,11 @@ features:
   sampling_rate: 1
   stride: 1
   n_neighbors: 4
+  use_depth: False
 
 model:
   type: "RegressionTCNv0"  # or "SpatialRegressionTCNv1"
-  feature_dim: 9
+  feature_dim: 8
   output_dim: 3
   hidden_channels: [64, 64, 64, 64, 64, 64]
   network_depth: 6
@@ -32,14 +33,14 @@ training:
   loss_function: "mse"  # or "mae"
   resume_from_checkpoint: false
   resume_checkpoint: "model_epoch_100.pth"  # Specify the checkpoint file to resume from
-  checkpoint_dir: "training_checkpoints/tcn_lite/"
+  checkpoint_dir: "training_checkpoints/tcn_sample/"
 
 inference:
   batch_size: 128
   device: "auto"
 
 wandb:
-  project: "tcn_lite"
+  project: "tcn_sample"
   log_interval: 1
   save_interval: 10 
 
