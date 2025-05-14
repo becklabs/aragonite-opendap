@@ -17,8 +17,8 @@ def grid_to_swath(
     remove_nans: If True, removes NaN values from the output
 
     Returns:
-    xy: 2D array of shape (k, 2) where each row is a pair of coordinates (longitude, latitude)
     values: 1D array of shape (k,) where k is the number of non-NaN points if remove_nan is True, otherwise k = n*m
+    xy: 2D array of shape (k, 2) where each row is a pair of coordinates (longitude, latitude)
     time: 1D array of datetime objects (k)
     """
     n, m = values.shape

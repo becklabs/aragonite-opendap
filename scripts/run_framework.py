@@ -17,6 +17,7 @@ from oadap.prediction.interpolation import (
 )
 
 from oadap.prediction.utils import grid_to_swath
+from oadap.prediction.tcn.utils import create_convex_hull, inside_hull_mask
 from oadap.utils import load_mat
 
 from oadap.prediction.modules import (
@@ -46,29 +47,46 @@ def parse_arguments():
     parser.add_argument(
         "--output_nc",
         type=str,
-        default="aragonite_field.nc",
+        default="aragonite_field_test.nc",
         help="Output NetCDF file path",
+    )
+    parser.add_argument(
+        "--crop_to_training",
+        type=bool,
+        default=False,
+        help="Whether to crop the output to the training study area",
     )
     return parser.parse_args()
 
 
 args = parse_arguments()
 # Parse start and end dates
-start = pd.Timestamp(args.start)
-end = pd.Timestamp(args.end)
+start_day = pd.Timestamp(args.start)
+end_day = pd.Timestamp(args.end)
 cache_dir = args.cache_dir
 output_netcdf_path = args.output_nc
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('script.log'),
+        logging.StreamHandler()
+    ]
+)
+
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)  # Set the logging level to INFO
-file_handler = logging.FileHandler('script.log')
-stream_handler = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-file_handler.setFormatter(formatter)
-stream_handler.setFormatter(formatter)
-logger.addHandler(file_handler)
-logger.addHandler(stream_handler)
-logger.propagate = False
+
+# logger = logging.getLogger(__name__)
+# logger.setLevel(logging.DEBUG)  # Set the logging level to INFO
+# file_handler = logging.FileHandler('script.log')
+# stream_handler = logging.StreamHandler()
+# formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+# file_handler.setFormatter(formatter)
+# stream_handler.setFormatter(formatter)
+# logger.addHandler(file_handler)
+# logger.addHandler(stream_handler)
+# logger.propagate = False
 
 # CONSTANTS
 WINDOW_SIZE = 20
@@ -93,6 +111,16 @@ lon = load_mat(data_dir + "FVCOM/x.mat")
 lat = load_mat(data_dir + "FVCOM/y.mat")
 fvcom_xy = np.column_stack((lon, lat))
 
+fvcom_neighbor_inds = np.load(data_dir + "FVCOM/neighbor_inds.npy")
+fvcom_neighbor_mask = np.all(fvcom_neighbor_inds != -1, axis=1)
+
+if args.crop_to_training:
+    study_area_hull = create_convex_hull(fvcom_xy[fvcom_neighbor_mask])
+else:
+    study_area_hull = create_convex_hull(fvcom_xy)
+
+study_area_mask = inside_hull_mask(satellite_xy, study_area_hull)
+
 lat_min = np.min(fvcom_xy[:, 1])
 lat_max = np.max(fvcom_xy[:, 1])
 lon_min = np.min(fvcom_xy[:, 0])
@@ -101,8 +129,8 @@ lon_max = np.max(fvcom_xy[:, 0])
 sal_tcn_config = "config/tcn/v0.yaml"
 temp_tcn_config = "config/tcn/v0.yaml"
 
-sal_tcn_checkpoint = "checkpoints/TCN/salinity/model_epoch_95.pth"
-temp_tcn_checkpoint = "checkpoints/TCN/temperature/model_epoch_95.pth"
+sal_tcn_checkpoint = "checkpoints_1600/TCN/salinity/model_epoch_90.pth"
+temp_tcn_checkpoint = "checkpoints_1600/TCN/temperature/model_epoch_95.pth"
 
 temp_fvcom_artifacts_dir = os.path.join(
     data_dir, "FVCOM", "preprocessed", "temperature", "all", "artifacts"
@@ -121,9 +149,9 @@ fvcom_h_path = os.path.join(data_dir, "FVCOM", "h.mat")
 INTERMEDIATE_DIR = cache_dir
 memory = Memory(location=INTERMEDIATE_DIR, verbose=0)
 
-####
-data_start = start - pd.Timedelta(days=WINDOW_SIZE - 1)
-data_end = end
+######
+window_start_day = start_day - pd.Timedelta(days=WINDOW_SIZE - 1)
+window_end_day = end_day
 
 # FETCHING DATA
 salinity_provider = MWRASalinity(path=salinity_data_path)
@@ -147,15 +175,15 @@ def fetch_salinity_data():
 
 
 @memory.cache
-def fetch_temperature_data():
+def fetch_temperature_data(start, end):
     logger.info("Fetching temperature data...")
     data = temperature_provider.subset(
         lat_min=lat_min,
         lat_max=lat_max,
         lon_min=lon_min,
         lon_max=lon_max,
-        start=data_start,
-        end=data_end,
+        start=start,
+        end=end,
         workers=8,
         pbar=True,
     )
@@ -164,15 +192,15 @@ def fetch_temperature_data():
 
 
 @memory.cache
-def fetch_chlorophyll_data():
+def fetch_chlorophyll_data(start, end):
     logger.info("Fetching chlorophyll data...")
     data = chlorophyll_provider.subset(
         lat_min=lat_min,
         lat_max=lat_max,
         lon_min=lon_min,
         lon_max=lon_max,
-        start=start - pd.Timedelta(days=1),
-        end=end + pd.Timedelta(days=1),
+        start=start - pd.Timedelta(days=3),
+        end=end + pd.Timedelta(days=3),
         workers=8,
         pbar=True,
     )
@@ -182,15 +210,15 @@ def fetch_chlorophyll_data():
 
 # Fetch data with caching
 sal_raw, sal_xy, sal_time = fetch_salinity_data()
-sst_raw, sst_xy, sst_time = fetch_temperature_data()
-chlor_raw, chlor_xy, chlor_time = fetch_chlorophyll_data()
+sst_raw, sst_xy, sst_time = fetch_temperature_data(window_start_day, window_end_day)
+chlor_raw, chlor_xy, chlor_time = fetch_chlorophyll_data(start_day, end_day)
 
 K_to_C = lambda K: K - 273.15
 sst_raw = K_to_C(sst_raw)
 
 # INTERPOLATION FUNCTIONS
 @memory.cache
-def compute_chlor_surface():
+def compute_chlor_surface(start, end):
     logger.info("Computing chlorophyll surface interpolation...")
     chlor_interpolator = TimeSubsetInterpolator(
         n_days=1,
@@ -208,6 +236,8 @@ def compute_chlor_surface():
     chlor_interpolator.fit(
         xy=chlor_xy_swath, values=np.log(chlor_raw_swath), time=chlor_time_swath
     )
+    # Log the days that are being used for the fit
+    logger.debug(f"Days used for fit: {chlor_time_swath}")
 
     chlor_surface = np.exp(
         chlor_interpolator.predict(grid=satellite_xy, days=pd.date_range(start, end))
@@ -217,13 +247,13 @@ def compute_chlor_surface():
 
 
 @memory.cache
-def compute_salinity_surface():
+def compute_salinity_surface(start, end):
     logger.info("Computing salinity surface interpolation...")
-    sal_interpolator = ScaledKrigingInterpolator(variogram_model="linear")
+    sal_interpolator = KrigingInterpolator(variogram_model="exponential")
     sal_interpolator.fit(xy=sal_xy, values=sal_raw, time=sal_time)
 
     salinity_surface = sal_interpolator.predict(
-        grid=satellite_xy_all, days=pd.date_range(data_start, data_end)
+        grid=satellite_xy_all, days=pd.date_range(start, end)
     )
     logger.info("Salinity surface computed.")
     return salinity_surface
@@ -289,7 +319,7 @@ def reconstruct_salinity_field(salinity_surface, sst_time):
 
 
 @memory.cache
-def compute_dic_field(salinity_field, temp_field):
+def compute_dic_field(salinity_field, temp_field, start, end):
     logger.info("Computing DIC field...")
     dic_regressor = DICRegressionModule(checkpoint_path=dic_regression_checkpoint)
 
@@ -340,33 +370,42 @@ def compute_aragonite_field(salinity_field, temp_field, dic_field, talk_field):
     return aragonite_field, depth
 
 
-chlor_surface = compute_chlor_surface()
 
-salinity_surface = compute_salinity_surface()
+
+chlor_surface = compute_chlor_surface(start_day, end_day)
+
+salinity_surface = compute_salinity_surface(window_start_day, window_end_day)
 
 temp_field = reconstruct_temp_field(sst_raw, sst_time)
 salinity_field = reconstruct_salinity_field(salinity_surface, sst_time)
 
-dic_field = compute_dic_field(salinity_field, temp_field)
+dic_field = compute_dic_field(salinity_field, temp_field, start_day, end_day)
 talk_field = compute_talk_field(salinity_field)
 
 aragonite_field, depth = compute_aragonite_field(
     salinity_field, temp_field, dic_field, talk_field
 )
 
-logger.info("Saving aragonite field to NetCDF file...")
+logger.info("Saving aragonite, DIC, and TA fields to NetCDF file...")
 
-# Prepare the data for NetCDF
-lon = satellite_xy[:, 0]
-lat = satellite_xy[:, 1]
-times = pd.date_range(start, end)  # n_times
-n_locations = len(lon)
-n_times = len(times)
-n_depths = depth.shape[1]  # Assuming depth is of shape (n_locations, n_depths)
+# Filter to study area for all fields
+aragonite_field = aragonite_field[study_area_mask]
+dic_field = dic_field[study_area_mask]
+ta_field = talk_field[study_area_mask]
+lon = satellite_xy[study_area_mask, 0]
+lat = satellite_xy[study_area_mask, 1]
+depth = depth[study_area_mask]
 
-# Create an xarray Dataset
+# Prepare the time coordinate
+times = pd.date_range(start_day, end_day)  # n_times
+
+# Create an xarray Dataset with aragonite, DIC, and TA fields
 ds = xr.Dataset(
-    {"aragonite": (("location", "time", "depth"), aragonite_field)},
+    {
+        "aragonite": (("location", "time", "depth"), aragonite_field),
+        "DIC": (("location", "time", "depth"), dic_field),
+        "TA": (("location", "time", "depth"), ta_field)
+    },
     coords={
         "lon": ("location", lon),
         "lat": ("location", lat),
@@ -375,13 +414,18 @@ ds = xr.Dataset(
     },
 )
 
+# Set attributes
 ds["aragonite"].attrs["units"] = "mmol/m^3"
 ds["aragonite"].attrs["long_name"] = "Aragonite Saturation"
-ds["depth"].attrs["units"] = "meters"
-ds["depth"].attrs["long_name"] = "Depth Below Sea Surface"
+ds["DIC"].attrs["units"] = "mmol/m^3"          # update units if needed
+ds["DIC"].attrs["long_name"] = "Dissolved Inorganic Carbon"
+ds["TA"].attrs["units"] = "mmol/m^3"           # update units if needed
+ds["TA"].attrs["long_name"] = "Total Alkalinity"
 ds["lon"].attrs["units"] = "degrees_east"
 ds["lat"].attrs["units"] = "degrees_north"
+ds["depth"].attrs["units"] = "meters"
+ds["depth"].attrs["long_name"] = "Depth Below Sea Surface"
 
 # Save to NetCDF file
 ds.to_netcdf(output_netcdf_path)
-logger.info(f"Aragonite field saved to {output_netcdf_path}")
+logger.info(f"Aragonite, DIC, and TA fields saved to {output_netcdf_path}")

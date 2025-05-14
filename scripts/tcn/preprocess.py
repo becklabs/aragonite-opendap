@@ -60,7 +60,7 @@ def parse_arguments():
     parser.add_argument(
         "--n_samples",
         type=int,
-        default=1200,
+        default=1600,
         help="Number of uniformly distributed xy points to consider",
     )
     return parser.parse_args()

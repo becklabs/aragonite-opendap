@@ -1,8 +1,10 @@
+import datetime
+import logging
+from abc import ABC, abstractmethod
+from typing import Any, Callable, Dict, Tuple, Union
+
 import numpy as np
 import pandas as pd
-import datetime
-from abc import ABC, abstractmethod
-from typing import Callable, Union, Tuple, Dict, Any
 from pykrige.ok3d import OrdinaryKriging3D
 from sklearn.preprocessing import StandardScaler
 
@@ -187,7 +189,7 @@ class TimeSubsetInterpolator(Interpolator):
             if not subset_idx.any():
                 continue  # Skip if no data points are found
 
-            print(
+            logging.debug(
                 f"Fitting model for {day.date()} with {subset_idx.sum()} points from {[d.date().strftime('%Y-%m-%d') + f'({time.isin([d]).sum()})' for d in collected_days]}"
             )
 
