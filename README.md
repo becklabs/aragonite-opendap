@@ -4,7 +4,8 @@
 
 ## Overview
 
-This repository implements the framework described in *Data-Driven Modeling of 4D Ocean and Coastal Acidification from Surface Measurements* to predict Aragonite Saturation State ($\Omega_{\text{Ar}}$) fields for Massachusetts Bay. Satellite data sources are accessed dynamically via [PODAAC](https://podaac.jpl.nasa.gov/), enabling up-to-date, daily predictions. The predictions are served over an [OPeNDAP](https://www.earthdata.nasa.gov/engage/open-data-services-and-software/api/opendap) protocol, allowing for easy integration with existing tools and services.
+This repository implements the framework described in *[Data-Driven Modeling of 4D Ocean and Coastal
+Acidification in the Massachusetts and Cape Cod Bays from Surface Measurements](https://doi.org/10.1029/2024JG008465)* to predict Aragonite Saturation State ($\Omega_{\text{Ar}}$) fields for Massachusetts Bay. Satellite data sources are accessed dynamically via [PODAAC](https://podaac.jpl.nasa.gov/), enabling up-to-date, daily predictions. The predictions are served over an [OPeNDAP](https://www.earthdata.nasa.gov/engage/open-data-services-and-software/api/opendap) protocol, allowing for easy integration with existing tools and services.
 
 <p align="center">
 	<img src="assets/OA_framework.png" alt="photo not available" width="80%" height="80%">
@@ -159,4 +160,20 @@ python -m scripts.regression.fit_dic \
 python -m scripts.regression.fit_dic \
     --csv_file data/MWRA/MWRA_clean.csv \
     --checkpoint_path checkpoints/DIC_regression/model.pkl
+```
+
+## Citation
+If you find our work helpful, please use the following citation:`
+
+```bibtex
+@article{https://doi.org/10.1029/2024JG008465,
+  author = {Champenois, B. and Bastidas, C. and LaBash, B. and Sapsis, T. P.},
+  title = {Data-Driven Modeling of 4D Ocean and Coastal Acidification in the Massachusetts and Cape Cod Bays From Surface Measurements},
+  journal = {Journal of Geophysical Research: Biogeosciences},
+  volume = {130},
+  number = {6},
+  pages = {e2024JG008465},
+  year = {2024},
+  doi = {https://doi.org/10.1029/2024JG008465}
+}
 ```
