@@ -107,6 +107,32 @@ The `aragonite_field_jan2018.nc` file will contain the predicted $\Omega_{\text{
 
 ## Training
 
+### FVCOM Preprocessing (Optional)
+With the separately provided raw FVCOM dataset, you can regenerate the training arrays and preprocessing artifacts. Run these commands from the repository root:
+
+```bash
+unzip -n /path/to/fvcom_raw.zip -d data/
+```
+
+The archive includes the raw temperature and salinity fields, FVCOM geometry, neighbor indices, and coastline shapefiles. To recompute the included neighbor indices (optional):
+
+```bash
+python -m scripts.tcn.find_neighbors
+```
+
+Preprocess temperature and salinity using the default `--n_samples 1600`:
+
+```bash
+python -m scripts.tcn.preprocess
+python -m scripts.tcn.preprocess \
+    --array_path data/FVCOM/salinity/salinity.mat \
+    --output_dir data/FVCOM/preprocessed/salinity/all/
+```
+
+Preprocessing removes the daily climatology, computes two vertical PCA modes, and builds 20-day input windows from surface anomalies, neighboring values, climatology, coordinates, and depth. The targets are the vertical mean anomaly and two PCA coefficients.
+
+Outputs are written to `data/FVCOM/preprocessed/{temperature,salinity}/all/`: training arrays in `train/`, full-domain PCA and climatology arrays in `artifacts/`, and sampled fields in `sample_artifacts/`. These commands overwrite existing preprocessing outputs.
+
 ### Temperature/Salinity TCN
 To train the Temporal Convolutional Network (TCN) to predict time-varying PCA coefficients for temperature and salinity:
 
