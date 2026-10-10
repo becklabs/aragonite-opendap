@@ -12,21 +12,25 @@ authors = ["Beck LaBash <labash.b@northeastern.edu>"]
 disable_error_code = ["import-untyped"]
 
 [tool.poetry.dependencies]
-python = ">=3.8"
-geopandas = {extras = ["all"], version = "^1.0.1"}
+python = ">=3.10,<3.13"
+geopandas = "^1.0.1"
 GPy = "^1.13.2"
 ipykernel = "^6.29.2"
 matplotlib = "^3.8.3"
 numpy = "^1.26.4"
-pandas = ">=1.5.3"
+pandas = ">=2.1,<3"
 PyCO2SYS = "^1.8.3.2"
 pydap = "^3.5"
 PyKrige = "^1.7.2"
-pytorch-tcn = "^1.1.0"
-scikit-learn = "^1.4.1.post1"
+pytorch-tcn = "1.1.0" # Match the saved TCN parameter names.
+scikit-learn = "1.4.1.post1" # Match the serialized models and scalers.
 scipy = "^1.12.0"
 seaborn = "^0.13.2"
-torch = "^2.4.0"
+torch = "2.4.0" # Preserve the current checkpoint resume behavior.
 wandb = "^0.17.5"
 joblib = "1.3.2"
-xarray = "1.16.0"
+xarray = "2024.9.0"
+tqdm = "^4.66.5"
+PyYAML = "^6.0.2"
+netCDF4 = "^1.7.1.post2"
+shapely = "^2.0"
