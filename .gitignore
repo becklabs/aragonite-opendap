@@ -3,3 +3,5 @@
 data/
 __pycache__/
 **/training_checkpoints/** 
+notebooks/*
+data_pub/

@@ -76,6 +76,11 @@ class DataFrameProvider(SwathDataProvider):
 
 class MWRASalinity(DataFrameProvider):
     DEPTH_THRESHOLD = 3
+    STATIONS = [
+        "F13", "F06", "F10", "F15", "N07", "N18",
+        "N21", "F22", "N04", "N01", "F23", "F17",
+        "N10", "F05",
+    ]
 
     def __init__(self, path: str):
         super().__init__(
@@ -86,3 +91,4 @@ class MWRASalinity(DataFrameProvider):
             variable_col="Salinity",
         )
         self.df = self.df[self.df["Depth"] < self.DEPTH_THRESHOLD]  # Surface only
+        self.df = self.df[self.df["Station"].isin(self.STATIONS)] # Filter stations

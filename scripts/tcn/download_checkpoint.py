@@ -19,12 +19,12 @@ def parse_arguments():
     )
     parser.add_argument(
         "--checkpoint_name",
-        default="model_epoch_95.pth",
+        default="model_epoch_90.pth",
         help="Name of the checkpoint file",
     )
     parser.add_argument(
         "--output_path",
-        default="checkpoints/TCN/temperature/",
+        default="checkpoints_1600/TCN/salinity/",
         help="Output path for the checkpoint",
     )
     return parser.parse_args()

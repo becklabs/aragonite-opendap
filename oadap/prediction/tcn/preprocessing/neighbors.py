@@ -1,11 +1,11 @@
 import numpy as np
 from typing import List
-from shapely.geometry import Point, LineString # type: ignore
+from shapely.geometry import Point, LineString  # type: ignore
 
 from typing import List
 import numpy as np
 
-from shapely.ops import unary_union # type: ignore
+from shapely.ops import unary_union  # type: ignore
 
 
 def is_path_over_land(point1, point2, coastline_geometry):
@@ -101,6 +101,7 @@ def find_neighbors(xy, coastline, min_distance=0.01, max_distance=0.04):
 
     return neighbor_inds
 
+
 def group(data: np.ndarray, neighbor_inds: np.ndarray) -> np.ndarray:
     """
     Group data points with their neighbors specified in a neighbor_inds array.
@@ -110,10 +111,12 @@ def group(data: np.ndarray, neighbor_inds: np.ndarray) -> np.ndarray:
     nt = data.shape[1]
     n_neighbors = neighbor_inds.shape[-1]
     grouped = np.full((nx, nt, n_neighbors + 1), np.nan)
-    
+
     for i, loc in enumerate(data):
         grouped[i, :, 0] = loc
         valid_neighbors = neighbor_inds[i] != -1
-        grouped[i, :, 1:][..., valid_neighbors] = data[neighbor_inds[i][valid_neighbors]].T
-    
+        grouped[i, :, 1:][..., valid_neighbors] = data[
+            neighbor_inds[i][valid_neighbors]
+        ].T
+
     return grouped
