@@ -23,8 +23,6 @@ git clone https://github.com/becklabs/aragonite-opendap.git && cd aragonite-open
 
 2. **From this directory, install the `oadap` pip package in editable mode:**
 
-Use Python 3.10–3.12; Python 3.11 was tested. Dependencies are installed from `pyproject.toml`.
-
 ```
 pip install -e .
 ```
