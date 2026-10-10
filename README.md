@@ -1,6 +1,6 @@
 # aragonite-opendap
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/release/python-380/)
+[![Python 3.10–3.12](https://img.shields.io/badge/python-3.10--3.12-blue.svg)](https://www.python.org/downloads/)
 [![Interactive Visualization](https://img.shields.io/badge/📊_Interactive_Visualization-Click_to_Visit_Web_App-FF6B6B)](https://oa-framework-viz.vercel.app/)
 
 ## Overview
@@ -50,20 +50,31 @@ To run framework training and inference, you will need to download the provided 
 
 1. **Download the `data_artifacts.zip` archive (~500MB) from the [Google Drive Link](https://drive.google.com/file/d/1w9pq5Gfqottebf14BIf7gaBQy7mpHlKR/view?usp=sharing).**
 2. **Extract the contents of `data_artifacts.zip` to the `data/` directory at the root of the repository:**
+
+   The archive contains a top-level `data_pub/` directory. Extract it and rename it to `data/`:
    
    ```bash
-   unzip /path/to/data_artifacts.zip -d data/
+   unzip /path/to/data_artifacts.zip
+   mv data_pub data
    ```
 
 The `data_artifacts.zip` includes preprocessed data and artifacts from FVCOM, MWRA, and Earthdata sources.
 
+It includes temperature and salinity training arrays, so preprocessing is optional. Regenerating these arrays requires the raw FVCOM temperature and salinity fields, which are not included in the archive.
+
 ### Additional Setup (Training Only)
-You will need a [Weights and Biases](https://wandb.ai/site) account to track training runs.
+For online tracking, you will need a [Weights and Biases](https://wandb.ai/site) account.
 
 **Login into Weights and Biases:**
     
 ```bash
 wandb login
+```
+
+To train locally without a Weights and Biases account, use offline mode:
+
+```bash
+export WANDB_MODE=offline
 ```
 
 
@@ -99,7 +110,7 @@ The `aragonite_field_jan2018.nc` file will contain the predicted $\Omega_{\text{
 ### Temperature/Salinity TCN
 To train the Temporal Convolutional Network (TCN) to predict time-varying PCA coefficients for temperature and salinity:
 
-1. **Update `config/v0.yaml` to point to the correct training dataset:**
+1. **Update `config/tcn/v0.yaml` to point to the correct training dataset:**
 
 For **Temperature**:
 
@@ -119,13 +130,13 @@ For **Salinity**:
 
 ```
 python -m scripts.tcn.train \
-    --config_file   [Optional] [str]  Path to the configuration file (default: config/v0.yaml) \
+    --config        [Optional] [str]  Path to the configuration file (default: config/tcn/v0.yaml) \
 ```
 
 **Example:**
 
 ```bash
-python -m scripts.tcn.train --config_file config/v0.yaml
+python -m scripts.tcn.train --config config/tcn/v0.yaml
 ```
 
 
